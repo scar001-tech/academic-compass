@@ -5,14 +5,30 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, GitMerge, Server, Smartphone, Monitor, Pencil } from "lucide-react";
+import { CheckCircle2, GitMerge, Server, Smartphone, Monitor, Pencil, Search } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { SyncConflict } from "@/lib/schoolData";
 
 export default function Conflicts() {
   const { state, resolveConflict, bulkResolveConflicts } = useSchool();
+  const [searchQuery, setSearchQuery] = useState("");
   const pending  = state.conflicts.filter(c => c.status === "pending");
   const resolved = state.conflicts.filter(c => c.status === "resolved");
+
+  const matchesSearch = (c: SyncConflict) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.entity.toLowerCase().includes(q) ||
+      c.field.toLowerCase().includes(q) ||
+      (c.deviceName || "").toLowerCase().includes(q) ||
+      (c.serverValue || "").toLowerCase().includes(q) ||
+      (c.thisDeviceValue || "").toLowerCase().includes(q)
+    );
+  };
+
+  const visiblePending = pending.filter(matchesSearch);
+  const visibleResolved = resolved.filter(matchesSearch);
 
   return (
     <div>
@@ -28,23 +44,34 @@ export default function Conflicts() {
       />
 
       <Tabs defaultValue="pending">
-        <TabsList>
-          <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-          <TabsTrigger value="resolved">Resolved ({resolved.length})</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between mb-3">
+          <TabsList>
+            <TabsTrigger value="pending">Pending ({visiblePending.length})</TabsTrigger>
+            <TabsTrigger value="resolved">Resolved ({visibleResolved.length})</TabsTrigger>
+          </TabsList>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search conflicts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-8 w-56"
+            />
+          </div>
+        </div>
 
         <TabsContent value="pending" className="space-y-3 mt-3">
-          {pending.length === 0 && (
+          {visiblePending.length === 0 && (
             <Card className="p-8 text-center text-muted-foreground">
               <CheckCircle2 className="h-6 w-6 mx-auto mb-2 text-success"/>No pending conflicts
             </Card>
           )}
-          {pending.map(c => <ConflictCard key={c.id} c={c} onResolve={resolveConflict}/>)}
+          {visiblePending.map(c => <ConflictCard key={c.id} c={c} onResolve={resolveConflict}/>)}
         </TabsContent>
 
         <TabsContent value="resolved" className="space-y-3 mt-3">
-          {resolved.length === 0 && <Card className="p-8 text-center text-muted-foreground">No history yet</Card>}
-          {resolved.map(c => (
+          {visibleResolved.length === 0 && <Card className="p-8 text-center text-muted-foreground">No history yet</Card>}
+          {visibleResolved.map(c => (
             <Card key={c.id} className="p-3 text-sm flex items-center justify-between">
               <div>
                 <div className="font-medium">{c.field} · {c.entity}</div>

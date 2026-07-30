@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Lock, Download, Upload, Shield } from "lucide-react";
+import { Plus, Trash2, Lock, Download, Upload, Shield, Search, X } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -48,8 +48,16 @@ export default function Teachers() {
   const [department, setDepartment] = useState("");
   const [role, setRole] = useState<string>("subject_teacher");
   const [password, setPassword] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const pendingProfiles = backendProfiles.filter(p => !p.approved);
+  const filteredProfiles = backendProfiles.filter(p => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (p.full_name || "").toLowerCase().includes(q) ||
+      p.email.toLowerCase().includes(q) ||
+      (p.department || "").toLowerCase().includes(q);
+  });
 
   const fetchProfiles = async () => {
     if (!isPrincipal) return;
@@ -262,9 +270,20 @@ export default function Teachers() {
 
       {
         <Card className="p-4 md:p-6 mb-4 space-y-4 md:space-y-6">
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-bold">Registered Staff — Approval &amp; Role Assignment</h3>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-bold">Registered Staff — Approval &amp; Role Assignment</h3>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search staff..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-64"
+              />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             View all staff who have registered accounts. Approve access and assign roles.
@@ -284,11 +303,11 @@ export default function Teachers() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {loadingProfiles ? (
-                  <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">Loading registered staff...</td></tr>
-                ) : backendProfiles.length === 0 ? (
-                  <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">No registered staff yet.</td></tr>
-                ) : backendProfiles.map((p) => {
+                 {loadingProfiles ? (
+                   <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">Loading registered staff...</td></tr>
+                 ) : filteredProfiles.length === 0 ? (
+                   <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">No staff match your search.</td></tr>
+                 ) : filteredProfiles.map((p) => {
                   const isPrincipalRow = p.roles.includes("admin") || p.roles.includes("principal");
                   return (
                     <tr key={p.id} className="hover:bg-muted/30 transition">

@@ -82,13 +82,11 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
         subjects: s.subjects,
         exams: s.exams,
         sheets: s.sheets,
-        entries: s.entries,
-        timetable: s.timetable ?? [],
-        conflicts: s.conflicts,
         curricula: s.curricula,
         settings: s.settings,
         classRemarks: s.classRemarks,
         principalRemarks: s.principalRemarks,
+        deletedIds: s.deletedIds ?? [],
       });
 
       const pending = s.entries.filter(e => e.pending);
@@ -138,24 +136,40 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
 
       update((n) => {
         const localById = new Map(n.entries.map(e => [e.id, e]));
-        for (const r of remoteEntries) {
-          const l = localById.get(r.id);
-          if (!l) continue;
-          if (l.pending) continue;
-          l.score = r.score;
-          l.version = r.version;
-          l.updatedAt = new Date(r.updated_at).getTime();
-          l.updatedBy = r.device_name ?? "Cloud";
-        }
-        for (const e of n.entries) {
-          if (e.pending) {
-            const remote = remoteEntries.find((r: RemoteMarkEntry) => r.id === e.id);
-            if (remote) {
-              e.version = remote.version;
-              e.pending = false;
-            }
+        const remoteById = new Map<RemoteMarkEntry["id"], RemoteMarkEntry>((remoteEntries as RemoteMarkEntry[]).map(r => [r.id, r]));
+        const mergedEntries = new Map<string, any>(localById);
+
+        for (const r of remoteEntries as RemoteMarkEntry[]) {
+          const existing = mergedEntries.get(r.id);
+          if (!existing) {
+            mergedEntries.set(r.id, {
+              id: r.id,
+              sheetId: r.sheet_id,
+              studentId: r.student_id,
+              score: r.score,
+              updatedAt: new Date(r.updated_at).getTime(),
+              updatedBy: r.device_name ?? "Cloud",
+              version: r.version,
+            });
+          } else if (!existing.pending) {
+            mergedEntries.set(r.id, {
+              ...existing,
+              score: r.score,
+              version: r.version,
+              updatedAt: new Date(r.updated_at).getTime(),
+              updatedBy: r.device_name ?? "Cloud",
+            });
+          } else {
+            mergedEntries.set(r.id, {
+              ...existing,
+              version: r.version,
+              pending: false,
+            });
           }
         }
+
+        n.entries = Array.from(mergedEntries.values());
+        n.syncQueue = n.entries.filter(e => e.pending).map(e => e.id);
 
         n.timetable = (remoteSlots as RemoteTimetableSlot[]).map(r => ({
           id: r.id,
@@ -202,19 +216,21 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
       const remoteSnapshot = await fetchSchoolSnapshot();
       if (remoteSnapshot) {
         update((n) => {
-          const arrays = ["students","teachers","classes","streams","subjects","exams","sheets","entries","timetable","conflicts","classRemarks","principalRemarks"] as const;
+          const arrays = ["students","teachers","classes","streams","subjects","exams","sheets","classRemarks","principalRemarks"] as const;
+          const deleted = new Set((remoteSnapshot.deletedIds ?? []).map(String));
           for (const key of arrays) {
+            const src = (n[key] ?? []) as any[];
+            const kept = src.filter((item) => !deleted.has(String(item.id)));
             const remoteArr = remoteSnapshot[key] ?? [];
-            const localArr = n[key] ?? [];
             const map = new Map<string, any>();
-            for (const item of [...remoteArr, ...localArr]) {
+            for (const item of [...kept, ...remoteArr]) {
               if (!item?.id) continue;
               const existing = map.get(item.id);
               if (!existing || (item.updatedAt && (!existing.updatedAt || item.updatedAt > existing.updatedAt))) {
                 map.set(item.id, item);
               }
             }
-            n[key] = Array.from(map.values()).sort((a: any, b: any) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+            n[key] = Array.from(map.values()).sort((a: any, b: any) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0)) as any;
           }
           if (remoteSnapshot.curricula?.length) {
             n.curricula = remoteSnapshot.curricula;
@@ -222,6 +238,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
           if (remoteSnapshot.settings) {
             n.settings = { ...n.settings, ...remoteSnapshot.settings };
           }
+          n.deletedIds = [];
         });
       }
 
@@ -279,33 +296,43 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
     resolution: SyncConflict["resolution"],
     custom?: string
   ) => {
-    await resolveRemoteConflict(
-      id,
-      (resolution as string) === "other" ? "this" : (resolution as "server" | "this" | "custom"),
-      custom
-    );
-    update((s) => {
-      const c = s.conflicts.find(x => x.id === id);
-      if (c) {
-        c.status = "resolved";
-        c.resolution = resolution;
-        if (resolution === "custom") c.customValue = custom;
-      }
-    });
-    syncNow();
+    try {
+      await resolveRemoteConflict(
+        id,
+        (resolution as string) === "other" ? "this" : (resolution as "server" | "this" | "custom"),
+        custom
+      );
+      update((s) => {
+        const c = s.conflicts.find(x => x.id === id);
+        if (c) {
+          c.status = "resolved";
+          c.resolution = resolution;
+          if (resolution === "custom") c.customValue = custom;
+        }
+      });
+      syncNow();
+    } catch (err) {
+      console.error("[resolveConflict]", err);
+      toast.error("Failed to resolve conflict");
+    }
   }, [update, syncNow]);
 
   const bulkResolveConflicts = useCallback(async (resolution: SyncConflict["resolution"]) => {
     const pending = stateRef.current.conflicts.filter(c => c.status === "pending");
-    for (const c of pending) {
-      await resolveRemoteConflict(c.id, resolution as "server" | "this" | "custom");
-    }
-    update((s) => {
-      s.conflicts.forEach(c => {
-        if (c.status === "pending") { c.status = "resolved"; c.resolution = resolution; }
+    try {
+      for (const c of pending) {
+        await resolveRemoteConflict(c.id, resolution as "server" | "this" | "custom");
+      }
+      update((s) => {
+        s.conflicts.forEach(c => {
+          if (c.status === "pending") { c.status = "resolved"; c.resolution = resolution; }
+        });
       });
-    });
-    syncNow();
+      syncNow();
+    } catch (err) {
+      console.error("[bulkResolveConflicts]", err);
+      toast.error("Failed to resolve some conflicts");
+    }
   }, [update, syncNow]);
 
   const upsertTimetableSlot = useCallback((slot: TimetableSlot) => {
@@ -320,8 +347,13 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   }, [update, syncNow]);
 
   const removeTimetableSlot = useCallback(async (id: ID) => {
-    await deleteTimetableSlot(id);
-    update((s) => { s.timetable = (s.timetable ?? []).filter(t => t.id !== id); });
+    try {
+      await deleteTimetableSlot(id);
+      update((s) => { s.timetable = (s.timetable ?? []).filter(t => t.id !== id); });
+    } catch (err) {
+      console.error("[removeTimetableSlot]", err);
+      toast.error("Failed to remove timetable slot");
+    }
   }, [update]);
 
   const resetAll = useCallback(() => { setState(resetState()); }, []);

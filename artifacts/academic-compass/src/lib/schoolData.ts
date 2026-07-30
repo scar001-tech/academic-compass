@@ -198,6 +198,7 @@ export interface AppState {
   online: boolean;
   deviceName: string;
   syncQueue: string[]; // entry ids awaiting sync
+  deletedIds: string[];
   lastSyncAt: number | null;
 }
 
@@ -314,6 +315,7 @@ function seed(): AppState {
     online: true,
     deviceName: "This Device",
     syncQueue: [],
+    deletedIds: [],
     lastSyncAt: now,
   };
 }
@@ -361,6 +363,7 @@ function emptyState(): AppState {
     online: true,
     deviceName: "This Device",
     syncQueue: [],
+    deletedIds: [],
     lastSyncAt: now,
   };
 }

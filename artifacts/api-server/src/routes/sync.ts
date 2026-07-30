@@ -37,14 +37,16 @@ router.post("/", authenticateJWT, async (req: any, res) => {
 function mergeSnapshots(remote: any, local: any): any {
   if (!remote) return local;
   if (!local) return remote;
-  const merged = { ...remote };
-  const arrays = ["students", "teachers", "classes", "streams", "subjects", "exams", "sheets", "entries", "timetable", "conflicts", "classRemarks", "principalRemarks"];
+  const deleted = new Set([...(remote.deletedIds ?? []), ...(local.deletedIds ?? [])].map(String));
+  const merged = { ...remote, deletedIds: Array.from(deleted) };
+  const arrays = ["students", "teachers", "classes", "streams", "subjects", "exams", "sheets", "classRemarks", "principalRemarks"];
   for (const key of arrays) {
     const remoteArr = Array.isArray(remote[key]) ? remote[key] : [];
     const localArr = Array.isArray(local[key]) ? local[key] : [];
     const map = new Map<string, any>();
     for (const item of [...remoteArr, ...localArr]) {
       if (!item?.id) continue;
+      if (deleted.has(String(item.id))) continue;
       const existing = map.get(item.id);
       if (!existing || (item.updatedAt && (!existing.updatedAt || item.updatedAt > existing.updatedAt))) {
         map.set(item.id, item);

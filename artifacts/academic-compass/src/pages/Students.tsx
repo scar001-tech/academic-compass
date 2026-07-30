@@ -55,7 +55,7 @@ export default function Students() {
 
   const removeStudent = (id: string) => {
     if (!canManageStudents) { toast.error("Only the Principal or Senior Teacher can remove learners"); return; }
-    update(st => { st.students = st.students.filter(x => x.id !== id); });
+    update(st => { st.students = st.students.filter(x => x.id !== id); st.deletedIds = [...(st.deletedIds ?? []), id]; });
   };
 
   const exportStudents = () => {

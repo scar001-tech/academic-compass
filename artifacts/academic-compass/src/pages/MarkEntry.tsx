@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { gradeFor } from "@/lib/schoolData";
-import { AlertTriangle, Cloud, CloudOff, Save, Lock } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { MarkEntry } from "@/lib/schoolData";
+import * as XLSX from "xlsx";
 
 export default function MarkEntry() {
   const { state, activeCurriculum, update, setMarkScore, syncNow } = useSchool();
@@ -44,6 +47,10 @@ export default function MarkEntry() {
   const [subjectId, setSubjectId] = useState<string>(preSheetObj?.subjectId || "");
   const [examId, setExamId]       = useState<string>(preSheetObj?.examId || "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const classes  = state.classes.filter(c => c.curriculumId === activeCurriculum);
   const streams  = state.streams.filter(s => s.classId === classId);
@@ -51,33 +58,50 @@ export default function MarkEntry() {
   const exams    = state.exams.filter(e => e.curriculumId === activeCurriculum);
   const curriculum = state.curricula.find(c => c.id === activeCurriculum)!;
 
-  const sheet = useMemo(() => state.sheets.find(s =>
-    s.classId === classId && s.streamId === streamId && s.subjectId === subjectId && s.examId === examId
-  ), [state.sheets, classId, streamId, subjectId, examId]);
+  const targetClasses = useMemo(() => {
+    if (!classId) return classes;
+    return classes.filter(c => c.id === classId);
+  }, [classes, classId]);
 
-  const students = state.students.filter(s => s.streamId === streamId);
-  const entries  = sheet ? state.entries.filter(e => e.sheetId === sheet.id) : [];
+  const subjectStreamGroups = useMemo(() => {
+    if (!subjectId || !examId) return [];
+    const groups: Array<{ streamId: string; streamName: string; students: typeof state.students }> = [];
 
-  useEffect(() => {
-    if (preSheet && preSheetObj) {
-      setClassId(preSheetObj.classId);
-      setStreamId(preSheetObj.streamId);
-      setSubjectId(preSheetObj.subjectId);
-      setExamId(preSheetObj.examId);
-    }
-  }, [preSheet]); // eslint-disable-line
+    targetClasses.forEach(cls => {
+      const classStreams = state.streams.filter(st => st.classId === cls.id);
+      classStreams.forEach(stream => {
+        const classStudents = state.students.filter(s => s.classId === cls.id && s.streamId === stream.id);
+        if (classStudents.length === 0) return;
+        groups.push({
+          streamId: stream.id,
+          streamName: `${cls.name} · ${stream.name}`,
+          students: classStudents,
+        });
+      });
+    });
+
+    return groups;
+  }, [state.students, state.streams, targetClasses, subjectId, examId]);
+
+  const totalStudents = useMemo(() => subjectStreamGroups.reduce((sum, g) => sum + g.students.length, 0), [subjectStreamGroups]);
+
+  const getSheetFor = useMemo(() => (streamIdHint: string) => {
+    if (!subjectId || !examId || !streamIdHint) return null;
+    return state.sheets.find(s => s.streamId === streamIdHint && s.subjectId === subjectId && s.examId === examId) || null;
+  }, [state.sheets, subjectId, examId]);
 
   const initializedRef = useRef("");
   useEffect(() => {
-    const key = `${examId}::${streamId}::${students.length}`;
-    if (key === initializedRef.current || !examId || !streamId) return;
+    const key = `${examId}::${subjectId}::${totalStudents}`;
+    if (key === initializedRef.current || !examId || !subjectId || totalStudents === 0) return;
     initializedRef.current = key;
 
     const s = state;
-    const relevantSheets = s.sheets.filter(sh => sh.examId === examId && sh.streamId === streamId);
     const missing: MarkEntry[] = [];
-    relevantSheets.forEach(sheet => {
-      s.students.filter(stu => stu.streamId === streamId).forEach(stu => {
+    subjectStreamGroups.forEach(group => {
+      group.students.forEach(stu => {
+        const sheet = getSheetFor(group.streamId);
+        if (!sheet) return;
         const exists = s.entries.some(e => e.sheetId === sheet.id && e.studentId === stu.id);
         if (!exists) {
           missing.push({
@@ -95,13 +119,38 @@ export default function MarkEntry() {
     if (missing.length > 0) {
       update(s => { s.entries.push(...missing); });
     }
-  }, [examId, streamId, students.length, update]);
+  }, [examId, subjectId, totalStudents, subjectStreamGroups, getSheetFor, update]);
 
-  const pendingCount = entries.filter(e => e.pending).length;
-  const missingCount = entries.filter(e => e.score == null).length;
+  const pendingCount = useMemo(() => {
+    let count = 0;
+    subjectStreamGroups.forEach(group => {
+      group.students.forEach(stu => {
+        const sheet = getSheetFor(group.streamId);
+        if (!sheet) return;
+        const e = state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id);
+        if (e?.pending) count++;
+      });
+    });
+    return count;
+  }, [subjectStreamGroups, getSheetFor, state.entries]);
+
+  const missingCount = useMemo(() => {
+    let count = 0;
+    subjectStreamGroups.forEach(group => {
+      group.students.forEach(stu => {
+        const sheet = getSheetFor(group.streamId);
+        if (!sheet) return;
+        const e = state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id);
+        if (e?.score == null) count++;
+      });
+    });
+    return count;
+  }, [subjectStreamGroups, getSheetFor, state.entries]);
 
   const changeScore = (studentId: string, subjectId: string, raw: string) => {
-    const sheetForSubject = state.sheets.find(s => s.subjectId === subjectId && s.examId === examId && s.streamId === streamId);
+    const stu = state.students.find(s => s.id === studentId);
+    if (!stu) return;
+    const sheetForSubject = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
     if (!sheetForSubject) return;
 
     if (raw === "") {
@@ -156,6 +205,117 @@ export default function MarkEntry() {
     if (stateRef.current.online) syncNow();
   };
 
+  const parseImportCsv = (raw: string): Array<{ admissionNo: string; score: number | null }> => {
+    const lines = raw.split(/\r?\n/).filter(line => line.trim());
+    const rows: Array<{ admissionNo: string; score: number | null }> = [];
+    for (const line of lines) {
+      const parts = line.split(",").map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2) continue;
+      const admissionNo = parts[0];
+      const scoreRaw = parts[1];
+      const score = scoreRaw === "" || scoreRaw === "-" ? null : Number(scoreRaw);
+      if (!admissionNo || Number.isNaN(score)) continue;
+      const finalScore = typeof score === "number" && Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+      rows.push({ admissionNo, score: finalScore });
+    }
+    return rows;
+  };
+
+  const handleImportMarks = async () => {
+    if (!subjectId || !examId) {
+      toast.error("Select a subject and exam first");
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const rows = parseImportCsv(importText);
+      if (rows.length === 0) {
+        toast.error("No valid rows found. Format: admissionNo, score");
+        return;
+      }
+      const allStudents = subjectStreamGroups.flatMap(g => g.students);
+      const studentByAdm = new Map(allStudents.map(s => [s.admissionNo.trim().toLowerCase(), s]));
+      let imported = 0;
+      const updates: { studentId: string; score: number | null; sheetId: string }[] = [];
+      for (const row of rows) {
+        const stu = studentByAdm.get(row.admissionNo.trim().toLowerCase());
+        if (!stu) continue;
+        const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
+        if (!stuSheet) continue;
+        updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
+      }
+      if (updates.length === 0) {
+        toast.error("No matching students found for the provided admission numbers");
+        return;
+      }
+      for (const u of updates) {
+        update(s => {
+          let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
+          if (!e) {
+            e = {
+              id: `e_${u.sheetId}_${u.studentId}_${Date.now()}`,
+              sheetId: u.sheetId,
+              studentId: u.studentId,
+              score: u.score,
+              updatedAt: Date.now(),
+              updatedBy: s.deviceName,
+              pending: true,
+            };
+            s.entries.push(e);
+          } else {
+            e.score = u.score;
+            e.updatedAt = Date.now();
+            e.updatedBy = s.deviceName;
+            e.pending = true;
+          }
+          if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
+        });
+        imported++;
+      }
+      toast.success(`Imported ${imported} mark${imported > 1 ? "s" : ""}`);
+      setImportOpen(false);
+      setImportText("");
+      if (stateRef.current.online) syncNow();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Import failed";
+      toast.error(msg);
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json<any>(sheet);
+      const rows = json
+        .map(r => {
+          const admissionNo = String(r["Adm. No."] || r["admissionNo"] || r["admission_no"] || "").trim();
+          const scoreRaw = r["score"] ?? r["Score"] ?? r["marks"] ?? r["Marks"];
+          const score = scoreRaw != null && scoreRaw !== "" ? Number(scoreRaw) : null;
+          if (!admissionNo || Number.isNaN(score)) return null;
+          const finalScore = typeof score === "number" && Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+          return { admissionNo, score: finalScore };
+        })
+        .filter((r): r is { admissionNo: string; score: number | null } => r !== null);
+      if (rows.length === 0) {
+        toast.error("No valid rows found in file");
+        return;
+      }
+      setImportText(rows.map(r => `${r.admissionNo}, ${r.score ?? ""}`).join("\n"));
+      setImportOpen(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to read file";
+      toast.error(msg);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -195,82 +355,109 @@ export default function MarkEntry() {
         </div>
       </Card>
 
-      {!sheet && (classId || streamId || subjectId || examId) && (
+      {subjectStreamGroups.length === 0 && (subjectId && examId) && (
         <Card className="p-6 text-center text-muted-foreground">
           <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-warning"/>
-          No matching mark sheet. Pick a full combination that exists, or create it from Exams.
+          No students found for the selected filters.
         </Card>
       )}
 
-      {sheet && (
-        <Card className="overflow-hidden card-pad">
-          <div className="p-3 border-b flex items-center justify-between flex-wrap gap-2">
+      {subjectStreamGroups.length > 0 && (
+        <div className="space-y-6">
+          {subjectStreamGroups.map((group) => {
+            const sheet = getSheetFor(group.streamId);
+            return (
+              <Card key={group.streamId} className="overflow-hidden card-pad">
+                <div className="p-3 border-b bg-muted/30">
+                  <div className="font-medium text-sm">
+                    {state.subjects.find(s => s.id === subjectId)?.name} · {group.streamName}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {state.exams.find(e => e.id === examId)?.name} · {group.students.length} students
+                    {sheet?.locked && " · 🔒 locked"}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>#</th><th>Adm. No.</th><th>Student</th><th className="w-28">Score</th><th>Grade</th></tr>
+                    </thead>
+                    <tbody>
+                      {group.students.map((stu, i) => {
+                        const e = sheet ? state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id) : undefined;
+                        const gb = gradeFor(e?.score ?? null, curriculum.gradingScale);
+                        const key = `${stu.id}_${subjectId}`;
+                        const draft = drafts[key] ?? String(e?.score ?? "");
+                        return (
+                          <tr key={stu.id}>
+                            <td className="text-muted-foreground">{i+1}</td>
+                            <td className="font-mono text-xs">{stu.admissionNo}</td>
+                            <td className="font-medium">{stu.name}</td>
+                            <td>
+                              <Input
+                                type="number" min={0} max={100}
+                                className="h-9 w-24"
+                                disabled={!sheet || sheet.locked || !canEnterMarks}
+                                value={draft}
+                                onChange={(ev) => setDrafts((prev) => ({ ...prev, [key]: ev.target.value }))}
+                                onBlur={(ev) => {
+                                  changeScore(stu.id, subjectId!, ev.target.value);
+                                  setDrafts((prev) => ({ ...prev, [key]: String(e?.score ?? "") }));
+                                }}
+                                onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                              />
+                            </td>
+                            <td>{gb ? <span className="chip bg-primary-soft text-primary border-primary/30">{gb.grade}</span> : <span className="text-muted-foreground">—</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" /> Import Marks
+            </DialogTitle>
+            <DialogDescription>
+              Paste CSV data or upload an Excel file for <b>{state.subjects.find(s => s.id === subjectId)?.name || "selected subject"}</b>.
+              Expected format: <code>admissionNo, score</code>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
             <div>
-              <div className="font-medium text-sm">
-                {state.subjects.find(s => s.id === sheet.subjectId)?.name} · {state.classes.find(c => c.id === sheet.classId)?.name} {state.streams.find(s => s.id === sheet.streamId)?.name}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {state.exams.find(e => e.id === sheet.examId)?.name} · Status: {sheet.status} {sheet.locked ? "· 🔒 locked" : ""}
-              </div>
+              <Label>Upload Excel/CSV</Label>
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileImport}
+                className="mt-1"
+              />
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              {missingCount > 0 && <span className="chip bg-warning-soft text-warning-foreground border-warning">{missingCount} missing</span>}
-              {pendingCount > 0 && <span className="chip bg-info-soft text-info border-info">{pendingCount} pending sync</span>}
-              <span className="text-muted-foreground">Updated {new Date(sheet.updatedAt).toLocaleString()}</span>
+            <div>
+              <Label htmlFor="import-text">Or paste CSV</Label>
+              <textarea
+                id="import-text"
+                className="w-full h-40 border rounded-md p-2 text-sm font-mono"
+                placeholder="2244, 78&#10;CBC/101/26, 85"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+              />
             </div>
+            <Button className="w-full" onClick={handleImportMarks} disabled={importBusy || !importText.trim() || !subjectId || !examId}>
+              {importBusy ? "Importing..." : "Import Marks"}
+            </Button>
           </div>
-
-          <div className="p-3 border-b">
-            <label className="text-xs text-muted-foreground">Subject teacher comment</label>
-            <Input value={sheet.teacherComment || ""} placeholder="Overall comment for this sheet…"
-              onChange={(e) => update(s => { const x = s.sheets.find(x => x.id === sheet.id); if (x) x.teacherComment = e.target.value; })} />
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr><th>#</th><th>Adm. No.</th><th>Student</th><th className="w-28">Score</th><th>Grade</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {students.map((stu, i) => {
-                  const e  = entries.find(x => x.studentId === stu.id);
-                  const gb = gradeFor(e?.score ?? null, curriculum.gradingScale);
-                  const key = `${stu.id}_${sheet.subjectId}`;
-                  const draft = drafts[key] ?? String(e?.score ?? "");
-                  return (
-                    <tr key={stu.id}>
-                      <td className="text-muted-foreground">{i+1}</td>
-                      <td className="font-mono text-xs">{stu.admissionNo}</td>
-                      <td className="font-medium">{stu.name}</td>
-                      <td>
-                        <Input
-                          type="number" min={0} max={100}
-                          className="h-9 w-24"
-                          disabled={sheet.locked || !canEnterMarks}
-                          value={draft}
-                          onChange={(ev) => setDrafts((prev) => ({ ...prev, [key]: ev.target.value }))}
-                          onBlur={(ev) => {
-                            changeScore(stu.id, sheet.subjectId, ev.target.value);
-                            setDrafts((prev) => ({ ...prev, [key]: String(e?.score ?? "") }));
-                          }}
-                          onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
-                        />
-                      </td>
-                      <td>{gb ? <span className="chip bg-primary-soft text-primary border-primary/30">{gb.grade}</span> : <span className="text-muted-foreground">—</span>}</td>
-                      <td className="text-xs">
-                        {e?.pending
-                          ? <span className="chip bg-warning-soft text-warning-foreground border-warning">edited offline</span>
-                          : e?.score != null ? <span className="chip bg-success-soft text-success border-success">saved</span>
-                          : <span className="chip bg-muted text-muted-foreground">missing</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

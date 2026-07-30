@@ -2,12 +2,19 @@ import { useSchool } from "@/store/school";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Search, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 export default function Classes() {
   const { state, activeCurriculum, update } = useSchool();
-  const classes = state.classes.filter(c => c.curriculumId === activeCurriculum);
+  const [searchQuery, setSearchQuery] = useState("");
+  const classes = state.classes.filter(c => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return c.curriculumId === activeCurriculum;
+    return c.curriculumId === activeCurriculum && c.name.toLowerCase().includes(q);
+  });
   const teachers = state.teachers.filter(t => t.curriculumIds.includes(activeCurriculum));
 
   const addClass = () => update((s) => {
@@ -22,7 +29,25 @@ export default function Classes() {
       <PageHeader
         title="Classes & Streams"
         description="Organize learners into classes and streams for this curriculum."
-        actions={<Button onClick={addClass}><Plus className="h-4 w-4 mr-1"/>Add class</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search classes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-56"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <Button onClick={addClass}><Plus className="h-4 w-4 mr-1"/>Add class</Button>
+          </div>
+        }
       />
 
       <div className="grid gap-3">
@@ -44,7 +69,7 @@ export default function Classes() {
                   </select>
                   <Button variant="ghost" size="icon" onClick={() => {
                     if (count > 0) { toast.error("Class has students — reassign them first"); return; }
-                    update(s => { s.classes = s.classes.filter(x => x.id !== c.id); s.streams = s.streams.filter(x => x.classId !== c.id); });
+                     update(s => { s.classes = s.classes.filter(x => x.id !== c.id); s.streams = s.streams.filter(x => x.classId !== c.id); s.deletedIds = [...(s.deletedIds ?? []), c.id, ...s.streams.filter(x => x.classId === c.id).map(x => x.id)]; });
                   }}><Trash2 className="h-4 w-4 text-destructive"/></Button>
                 </div>
               </div>
@@ -53,7 +78,7 @@ export default function Classes() {
                   <div key={str.id} className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm bg-muted/40">
                     <input className="inline-edit w-24" value={str.name}
                       onChange={(e) => update(s => { const x = s.streams.find(x => x.id === str.id); if (x) x.name = e.target.value; })}/>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => update(s => { s.streams = s.streams.filter(x => x.id !== str.id); })}>
+                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => update(s => { s.streams = s.streams.filter(x => x.id !== str.id); s.deletedIds = [...(s.deletedIds ?? []), str.id]; })}>
                       <Trash2 className="h-3 w-3 text-destructive"/>
                     </Button>
                   </div>

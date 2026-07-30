@@ -160,6 +160,14 @@ async function createStore(): Promise<DataStore> {
   return createSqliteStore("./data/academic-compass.sqlite");
 }
 
+type Row = Record<string, unknown>;
+type Result = { changes: number } & Row;
+
+function runResult(sqliteDb: DatabaseSync, sql: string, ...args: any[]): Result {
+  const res = (sqliteDb as any).prepare(sql).run(...args);
+  return { changes: res.changes ?? 0, ...res } as Result;
+}
+
 async function createSqliteStore(rawPath: string): Promise<DataStore> {
   const sqlite = await import("node:sqlite") as unknown as { DatabaseSync: typeof DatabaseSync };
   const dbPath = path.resolve(process.cwd(), rawPath || "./data/academic-compass.sqlite");
@@ -167,6 +175,7 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
   const sqliteDb = new sqlite.DatabaseSync(dbPath);
   sqliteDb.exec("PRAGMA journal_mode = WAL");
   sqliteDb.exec("PRAGMA foreign_keys = ON");
+  sqliteDb.exec("PRAGMA busy_timeout = 5000");
   sqliteDb.exec(`
     CREATE TABLE IF NOT EXISTS ac_profiles (
       id TEXT PRIMARY KEY,
@@ -223,7 +232,8 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
       resolution TEXT,
       custom_value TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      resolved_at TEXT
+      resolved_at TEXT,
+      UNIQUE(entity, entity_id, field, status)
     );
     CREATE TABLE IF NOT EXISTS ac_school_data (
       id TEXT PRIMARY KEY DEFAULT 'global',
@@ -285,166 +295,186 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
     resolvedAt: row.resolved_at ? new Date(row.resolved_at) : null,
   });
 
+  function withTransaction(fn: () => void) {
+    sqliteDb.exec("BEGIN IMMEDIATE");
+    try {
+      fn();
+      sqliteDb.exec("COMMIT");
+    } catch (err) {
+      sqliteDb.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
   return {
     async getProfileByEmail(email) {
-      const row = sqliteDb.prepare("SELECT * FROM ac_profiles WHERE email = ? LIMIT 1").get(email);
+      const row = (sqliteDb as any).prepare("SELECT * FROM ac_profiles WHERE email = ? LIMIT 1").get(email);
       return row ? profileFromRow(row) : null;
     },
     async getProfileById(id) {
-      const row = sqliteDb.prepare("SELECT * FROM ac_profiles WHERE id = ? LIMIT 1").get(id);
+      const row = (sqliteDb as any).prepare("SELECT * FROM ac_profiles WHERE id = ? LIMIT 1").get(id);
       return row ? profileFromRow(row) : null;
     },
     async hasAnyProfile() {
-      return Boolean(sqliteDb.prepare("SELECT id FROM ac_profiles LIMIT 1").get());
+      return Boolean((sqliteDb as any).prepare("SELECT id FROM ac_profiles LIMIT 1").get());
     },
     async createProfile(input) {
-      const tx = sqliteDb.prepare(`INSERT INTO ac_profiles (id, email, password_hash, full_name, department, approved, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`);
-      tx.run(input.id, input.email, input.passwordHash, input.fullName ?? null, input.department ?? null, input.approved ? 1 : 0, new Date().toISOString());
-      const roleInsert = sqliteDb.prepare("INSERT OR IGNORE INTO ac_user_roles (user_id, role) VALUES (?, ?)");
-      for (const role of input.roles ?? []) roleInsert.run(input.id, role);
+      withTransaction(() => {
+        runResult(sqliteDb as any, `INSERT INTO ac_profiles (id, email, password_hash, full_name, department, approved, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`, input.id, input.email, input.passwordHash, input.fullName ?? null, input.department ?? null, input.approved ? 1 : 0, new Date().toISOString());
+        const roleInsert = (sqliteDb as any).prepare("INSERT OR IGNORE INTO ac_user_roles (user_id, role) VALUES (?, ?)");
+        for (const role of input.roles ?? []) roleInsert.run(input.id, role);
+      });
     },
     async rolesForUser(userId) {
-      return sqliteDb.prepare("SELECT role FROM ac_user_roles WHERE user_id = ?").all(userId).map((row: any) => row.role);
+      return (sqliteDb as any).prepare("SELECT role FROM ac_user_roles WHERE user_id = ?").all(userId).map((row: any) => row.role);
     },
     async hasAnyRole(userId, roles) {
-      const assigned = sqliteDb.prepare("SELECT role FROM ac_user_roles WHERE user_id = ?").all(userId).map((row: any) => row.role as string);
+      const assigned = (sqliteDb as any).prepare("SELECT role FROM ac_user_roles WHERE user_id = ?").all(userId).map((row: any) => row.role as string);
       return assigned.some((role: string) => roles.includes(role));
     },
     async listProfiles() {
-      const profiles = sqliteDb.prepare("SELECT * FROM ac_profiles ORDER BY created_at ASC").all().map(profileFromRow);
-      const roles = sqliteDb.prepare("SELECT user_id, role FROM ac_user_roles").all();
-      return profiles.map((profile) => ({
+      const profiles = (sqliteDb as any).prepare("SELECT * FROM ac_profiles ORDER BY created_at ASC").all().map(profileFromRow);
+      const roles = (sqliteDb as any).prepare("SELECT user_id, role FROM ac_user_roles").all();
+      return profiles.map((profile: ProfileRow) => ({
         ...profile,
         roles: roles.filter((role: any) => role.user_id === profile.id).map((role: any) => role.role),
       }));
     },
     async setApproval(userId, approved) {
-      sqliteDb.prepare("UPDATE ac_profiles SET approved = ? WHERE id = ?").run(approved ? 1 : 0, userId);
+      runResult(sqliteDb as any, "UPDATE ac_profiles SET approved = ? WHERE id = ?", approved ? 1 : 0, userId);
     },
     async assignRole(userId, role, action) {
-      if (action === "add") sqliteDb.prepare("INSERT OR IGNORE INTO ac_user_roles (user_id, role) VALUES (?, ?)").run(userId, role);
-      else sqliteDb.prepare("DELETE FROM ac_user_roles WHERE user_id = ? AND role = ?").run(userId, role);
+      if (action === "add") runResult(sqliteDb as any, "INSERT OR IGNORE INTO ac_user_roles (user_id, role) VALUES (?, ?)", userId, role);
+      else runResult(sqliteDb as any, "DELETE FROM ac_user_roles WHERE user_id = ? AND role = ?", userId, role);
     },
     async deleteProfile(userId) {
-      sqliteDb.prepare("DELETE FROM ac_user_roles WHERE user_id = ?").run(userId);
-      sqliteDb.prepare("DELETE FROM ac_profiles WHERE id = ?").run(userId);
+      withTransaction(() => {
+        runResult(sqliteDb as any, "DELETE FROM ac_user_roles WHERE user_id = ?", userId);
+        runResult(sqliteDb as any, "DELETE FROM ac_profiles WHERE id = ?", userId);
+      });
     },
     async updatePassword(userId, passwordHash) {
-      sqliteDb.prepare("UPDATE ac_profiles SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+      runResult(sqliteDb as any, "UPDATE ac_profiles SET password_hash = ? WHERE id = ?", passwordHash, userId);
     },
     async listMarkEntries() {
-      return sqliteDb.prepare("SELECT * FROM ac_mark_entries").all().map(markFromRow);
+      return (sqliteDb as any).prepare("SELECT * FROM ac_mark_entries").all().map(markFromRow);
     },
     async upsertMarkEntry(input) {
-      const existing = sqliteDb.prepare("SELECT * FROM ac_mark_entries WHERE id = ? LIMIT 1").get(input.id) as any;
-      if (!existing) {
-        sqliteDb.prepare(`INSERT INTO ac_mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`)
-          .run(input.id, input.curriculumId, input.sheetId, input.studentId, input.score, input.userId, input.deviceName ?? null, new Date().toISOString());
-        return "ok";
-      }
-      if (existing.version > (input.version ?? 0)) {
-        sqliteDb.prepare(`INSERT OR IGNORE INTO ac_sync_conflicts
+      const newVersion = (input.version ?? 0) + 1;
+      const updated = runResult(sqliteDb as any, `UPDATE ac_mark_entries SET score = ?, updated_by = ?, device_name = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?`, input.score, input.userId, input.deviceName ?? null, newVersion, new Date().toISOString(), input.id, input.version ?? 0);
+      if (updated.changes > 0) return "ok";
+
+      const insertResult = runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, input.id, input.curriculumId, input.sheetId, input.studentId, input.score, input.userId, input.deviceName ?? null, 1, new Date().toISOString());
+      if (insertResult.changes > 0) return "ok";
+
+      const existing = (sqliteDb as any).prepare("SELECT * FROM ac_mark_entries WHERE id = ? LIMIT 1").get(input.id) as any;
+      const alreadyConflicted = (sqliteDb as any).prepare("SELECT id FROM ac_sync_conflicts WHERE entity = ? AND entity_id = ? AND field = ? AND status = 'pending' LIMIT 1").get("mark", input.id, "score");
+      if (!alreadyConflicted) {
+        runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_sync_conflicts
           (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
-          VALUES (?, 'mark', ?, 'score', ?, ?, ?, ?, 'pending', ?)`)
-          .run(randomUUID(), input.id, String(existing.score ?? ""), String(input.score ?? ""), input.userId, input.deviceName ?? null, new Date().toISOString());
-        return "conflict";
+          VALUES (?, 'mark', ?, 'score', ?, ?, ?, ?, 'pending', ?)`, randomUUID(), input.id, String(existing.score ?? ""), String(input.score ?? ""), input.userId, input.deviceName ?? null, new Date().toISOString());
       }
-      sqliteDb.prepare(`UPDATE ac_mark_entries SET score = ?, updated_by = ?, device_name = ?, version = ?, updated_at = ? WHERE id = ?`)
-        .run(input.score, input.userId, input.deviceName ?? null, existing.version + 1, new Date().toISOString(), input.id);
-      return "ok";
+      return "conflict";
     },
     async upsertMarkEntries(inputs) {
       const results: Array<{ id: string; status: "ok" | "conflict" | "error" }> = [];
-      for (const input of inputs) {
-        const existing = sqliteDb.prepare("SELECT * FROM ac_mark_entries WHERE id = ? LIMIT 1").get(input.id) as any;
-        if (!existing) {
-          sqliteDb.prepare(`INSERT INTO ac_mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`)
-            .run(input.id, input.curriculumId, input.sheetId, input.studentId, input.score, input.userId, input.deviceName ?? null, new Date().toISOString());
-          results.push({ id: input.id, status: "ok" });
-        } else if (existing.version > (input.version ?? 0)) {
-          sqliteDb.prepare(`INSERT OR IGNORE INTO ac_sync_conflicts
-            (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
-            VALUES (?, 'mark', ?, 'score', ?, ?, ?, ?, 'pending', ?)`)
-            .run(randomUUID(), input.id, String(existing.score ?? ""), String(input.score ?? ""), input.userId, input.deviceName ?? null, new Date().toISOString());
+      withTransaction(() => {
+        for (const input of inputs) {
+          const newVersion = (input.version ?? 0) + 1;
+          const updated = runResult(sqliteDb as any, `UPDATE ac_mark_entries SET score = ?, updated_by = ?, device_name = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?`, input.score, input.userId, input.deviceName ?? null, newVersion, new Date().toISOString(), input.id, input.version ?? 0);
+          if (updated.changes > 0) {
+            results.push({ id: input.id, status: "ok" });
+            continue;
+          }
+          const insertResult = runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, input.id, input.curriculumId, input.sheetId, input.studentId, input.score, input.userId, input.deviceName ?? null, 1, new Date().toISOString());
+          if (insertResult.changes > 0) {
+            results.push({ id: input.id, status: "ok" });
+            continue;
+          }
+          const existing = (sqliteDb as any).prepare("SELECT * FROM ac_mark_entries WHERE id = ? LIMIT 1").get(input.id) as any;
+          const alreadyConflicted = (sqliteDb as any).prepare("SELECT id FROM ac_sync_conflicts WHERE entity = ? AND entity_id = ? AND field = ? AND status = 'pending' LIMIT 1").get("mark", input.id, "score");
+          if (!alreadyConflicted) {
+            runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_sync_conflicts
+              (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
+              VALUES (?, 'mark', ?, 'score', ?, ?, ?, ?, 'pending', ?)`, randomUUID(), input.id, String(existing.score ?? ""), String(input.score ?? ""), input.userId, input.deviceName ?? null, new Date().toISOString());
+          }
           results.push({ id: input.id, status: "conflict" });
-        } else {
-          sqliteDb.prepare(`UPDATE ac_mark_entries SET score = ?, updated_by = ?, device_name = ?, version = ?, updated_at = ? WHERE id = ?`)
-            .run(input.score, input.userId, input.deviceName ?? null, existing.version + 1, new Date().toISOString(), input.id);
-          results.push({ id: input.id, status: "ok" });
         }
-      }
+      });
       return results;
     },
     async listTimetableSlots() {
-      return sqliteDb.prepare("SELECT * FROM ac_timetable_slots").all().map(slotFromRow);
+      return (sqliteDb as any).prepare("SELECT * FROM ac_timetable_slots").all().map(slotFromRow);
     },
     async upsertTimetableSlot(input) {
-      const existing = sqliteDb.prepare("SELECT * FROM ac_timetable_slots WHERE id = ? LIMIT 1").get(input.id) as any;
-      if (!existing) {
-        sqliteDb.prepare(`INSERT INTO ac_timetable_slots
-          (id, curriculum_id, class_id, stream_id, day_of_week, period, start_time, end_time, subject_id, teacher_id, room, version, updated_by, device_name, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
-          .run(input.id, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, input.userId, input.deviceName ?? null, new Date().toISOString());
-        return "ok";
-      }
-      if (existing.version > (input.version ?? 0)) {
-        sqliteDb.prepare(`INSERT OR IGNORE INTO ac_sync_conflicts
+      const newVersion = (input.version ?? 0) + 1;
+      const updated = runResult(sqliteDb as any, `UPDATE ac_timetable_slots SET curriculum_id = ?, class_id = ?, stream_id = ?, day_of_week = ?, period = ?, start_time = ?, end_time = ?, subject_id = ?, teacher_id = ?, room = ?, version = ?, updated_by = ?, device_name = ?, updated_at = ? WHERE id = ? AND version = ?`, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, newVersion, input.userId, input.deviceName ?? null, new Date().toISOString(), input.id, input.version ?? 0);
+      if (updated.changes > 0) return "ok";
+
+      const insertResult = runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_timetable_slots
+        (id, curriculum_id, class_id, stream_id, day_of_week, period, start_time, end_time, subject_id, teacher_id, room, version, updated_by, device_name, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, input.id, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, 1, input.userId, input.deviceName ?? null, new Date().toISOString());
+      if (insertResult.changes > 0) return "ok";
+
+      const existing = (sqliteDb as any).prepare("SELECT * FROM ac_timetable_slots WHERE id = ? LIMIT 1").get(input.id) as any;
+      const alreadyConflicted = (sqliteDb as any).prepare("SELECT id FROM ac_sync_conflicts WHERE entity = ? AND entity_id = ? AND field = ? AND status = 'pending' LIMIT 1").get("timetable", input.id, "slot");
+      if (!alreadyConflicted) {
+        runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_sync_conflicts
           (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
-          VALUES (?, 'timetable', ?, 'slot', ?, ?, ?, ?, 'pending', ?)`)
-          .run(randomUUID(), input.id, `${existing.subject_id}@${existing.day_of_week}/${existing.period}`, `${input.subjectId}@${input.dayOfWeek}/${input.period}`, input.userId, input.deviceName ?? null, new Date().toISOString());
-        return "conflict";
+          VALUES (?, 'timetable', ?, 'slot', ?, ?, ?, ?, 'pending', ?)`, randomUUID(), input.id, `${existing.subject_id}@${existing.day_of_week}/${existing.period}`, `${input.subjectId}@${input.dayOfWeek}/${input.period}`, input.userId, input.deviceName ?? null, new Date().toISOString());
       }
-      sqliteDb.prepare(`UPDATE ac_timetable_slots SET curriculum_id = ?, class_id = ?, stream_id = ?, day_of_week = ?, period = ?, start_time = ?, end_time = ?, subject_id = ?, teacher_id = ?, room = ?, version = ?, updated_by = ?, device_name = ?, updated_at = ? WHERE id = ?`)
-        .run(input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, existing.version + 1, input.userId, input.deviceName ?? null, new Date().toISOString(), input.id);
-      return "ok";
+      return "conflict";
     },
     async upsertTimetableSlots(inputs) {
       const results: Array<{ id: string; status: "ok" | "conflict" | "error" }> = [];
-      for (const input of inputs) {
-        const existing = sqliteDb.prepare("SELECT * FROM ac_timetable_slots WHERE id = ? LIMIT 1").get(input.id) as any;
-        if (!existing) {
-          sqliteDb.prepare(`INSERT INTO ac_timetable_slots
+      withTransaction(() => {
+        for (const input of inputs) {
+          const newVersion = (input.version ?? 0) + 1;
+          const updated = runResult(sqliteDb as any, `UPDATE ac_timetable_slots SET curriculum_id = ?, class_id = ?, stream_id = ?, day_of_week = ?, period = ?, start_time = ?, end_time = ?, subject_id = ?, teacher_id = ?, room = ?, version = ?, updated_by = ?, device_name = ?, updated_at = ? WHERE id = ? AND version = ?`, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, newVersion, input.userId, input.deviceName ?? null, new Date().toISOString(), input.id, input.version ?? 0);
+          if (updated.changes > 0) {
+            results.push({ id: input.id, status: "ok" });
+            continue;
+          }
+          const insertResult = runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_timetable_slots
             (id, curriculum_id, class_id, stream_id, day_of_week, period, start_time, end_time, subject_id, teacher_id, room, version, updated_by, device_name, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
-            .run(input.id, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, input.userId, input.deviceName ?? null, new Date().toISOString());
-          results.push({ id: input.id, status: "ok" });
-        } else if (existing.version > (input.version ?? 0)) {
-          sqliteDb.prepare(`INSERT OR IGNORE INTO ac_sync_conflicts
-            (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
-            VALUES (?, 'timetable', ?, 'slot', ?, ?, ?, ?, 'pending', ?)`)
-            .run(randomUUID(), input.id, `${existing.subject_id}@${existing.day_of_week}/${existing.period}`, `${input.subjectId}@${input.dayOfWeek}/${input.period}`, input.userId, input.deviceName ?? null, new Date().toISOString());
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, input.id, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, 1, input.userId, input.deviceName ?? null, new Date().toISOString());
+          if (insertResult.changes > 0) {
+            results.push({ id: input.id, status: "ok" });
+            continue;
+          }
+          const existing = (sqliteDb as any).prepare("SELECT * FROM ac_timetable_slots WHERE id = ? LIMIT 1").get(input.id) as any;
+          const alreadyConflicted = (sqliteDb as any).prepare("SELECT id FROM ac_sync_conflicts WHERE entity = ? AND entity_id = ? AND field = ? AND status = 'pending' LIMIT 1").get("timetable", input.id, "slot");
+          if (!alreadyConflicted) {
+            runResult(sqliteDb as any, `INSERT OR IGNORE INTO ac_sync_conflicts
+              (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
+              VALUES (?, 'timetable', ?, 'slot', ?, ?, ?, ?, 'pending', ?)`, randomUUID(), input.id, `${existing.subject_id}@${existing.day_of_week}/${existing.period}`, `${input.subjectId}@${input.dayOfWeek}/${input.period}`, input.userId, input.deviceName ?? null, new Date().toISOString());
+          }
           results.push({ id: input.id, status: "conflict" });
-        } else {
-          sqliteDb.prepare(`UPDATE ac_timetable_slots SET curriculum_id = ?, class_id = ?, stream_id = ?, day_of_week = ?, period = ?, start_time = ?, end_time = ?, subject_id = ?, teacher_id = ?, room = ?, version = ?, updated_by = ?, device_name = ?, updated_at = ? WHERE id = ?`)
-            .run(input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, existing.version + 1, input.userId, input.deviceName ?? null, new Date().toISOString(), input.id);
-          results.push({ id: input.id, status: "ok" });
         }
-      }
+      });
       return results;
     },
     async deleteTimetableSlot(id) {
-      sqliteDb.prepare("DELETE FROM ac_timetable_slots WHERE id = ?").run(id);
+      runResult(sqliteDb as any, "DELETE FROM ac_timetable_slots WHERE id = ?", id);
     },
     async listConflicts(status) {
       const rows = status
-        ? sqliteDb.prepare("SELECT * FROM ac_sync_conflicts WHERE status = ?").all(status)
-        : sqliteDb.prepare("SELECT * FROM ac_sync_conflicts").all();
+        ? (sqliteDb as any).prepare("SELECT * FROM ac_sync_conflicts WHERE status = ?").all(status)
+        : (sqliteDb as any).prepare("SELECT * FROM ac_sync_conflicts").all();
       return rows.map(conflictFromRow);
     },
     async resolveConflict(id, resolution, customValue) {
-      sqliteDb.prepare("UPDATE ac_sync_conflicts SET status = 'resolved', resolution = ?, custom_value = ?, resolved_at = ? WHERE id = ?")
-        .run(resolution, customValue ?? null, new Date().toISOString(), id);
+      runResult(sqliteDb as any, "UPDATE ac_sync_conflicts SET status = 'resolved', resolution = ?, custom_value = ?, resolved_at = ? WHERE id = ?", resolution, customValue ?? null, new Date().toISOString(), id);
     },
     async getSchoolSnapshot() {
-      const row = sqliteDb.prepare("SELECT * FROM ac_school_data WHERE id = 'global' LIMIT 1").get() as any;
+      const row = (sqliteDb as any).prepare("SELECT * FROM ac_school_data WHERE id = 'global' LIMIT 1").get() as any;
       return row ? { id: row.id, data: row.data, updatedAt: row.updated_at } : null;
     },
     async setSchoolSnapshot(data) {
-      sqliteDb.prepare("INSERT INTO ac_school_data (id, data, updated_at) VALUES ('global', ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
-        .run(data, new Date().toISOString());
+      runResult(sqliteDb as any, "INSERT INTO ac_school_data (id, data, updated_at) VALUES ('global', ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at", data, new Date().toISOString());
     },
   };
 }

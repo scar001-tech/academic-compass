@@ -2,15 +2,23 @@ import { useSchool } from "@/store/school";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, Download, Upload } from "lucide-react";
-import { useRef } from "react";
+import { Plus, Trash2, Download, Upload, Search, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { createMarkSheetsForExam } from "@/lib/schoolData";
+import { Input } from "@/components/ui/input";
 
 export default function Exams() {
   const { state, activeCurriculum, update } = useSchool();
-  const exams = state.exams.filter(e => e.curriculumId === activeCurriculum);
+  const [searchQuery, setSearchQuery] = useState("");
+  const exams = state.exams.filter(e => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return e.curriculumId === activeCurriculum;
+    return e.curriculumId === activeCurriculum && (
+      e.name.toLowerCase().includes(q) || String(e.term).includes(q) || e.status.toLowerCase().includes(q)
+    );
+  });
   const fileRef = useRef<HTMLInputElement>(null);
 
   const add = () => update(s => {
@@ -79,6 +87,20 @@ export default function Exams() {
       <PageHeader title="Exams" description="Set up exams and terms for this curriculum."
         actions={
           <div className="flex gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search exams..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-56"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <Button variant="outline" onClick={exportExams} disabled={exams.length === 0}>
               <Download className="h-4 w-4 mr-1"/>Export
             </Button>
@@ -116,7 +138,7 @@ export default function Exams() {
                   </select>
                 </td>
                 <td>
-                  <Button variant="ghost" size="icon" onClick={() => update(s => { s.exams = s.exams.filter(x => x.id !== ex.id); })}>
+                  <Button variant="ghost" size="icon" onClick={() => update(s => { s.exams = s.exams.filter(x => x.id !== ex.id); s.deletedIds = [...(s.deletedIds ?? []), ex.id]; })}>
                     <Trash2 className="h-4 w-4 text-destructive"/>
                   </Button>
                 </td>

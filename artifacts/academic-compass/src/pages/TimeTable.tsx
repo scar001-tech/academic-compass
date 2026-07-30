@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Lock, Pencil, Trash2, Plus, CalendarDays } from "lucide-react";
+import { Lock, Pencil, Trash2, Plus, CalendarDays, Search } from "lucide-react";
 import { TimetableSlot } from "@/lib/schoolData";
 import { toast } from "sonner";
 
@@ -30,9 +30,22 @@ export default function Timetable() {
 
   const [editing, setEditing] = useState<TimetableSlot | null>(null);
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredSlots = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return slots;
+    return slots.filter(slot => {
+      const subject = state.subjects.find(x => x.id === slot.subjectId);
+      const teacher = state.teachers.find(x => x.id === slot.teacherId);
+      return (subject?.name || "").toLowerCase().includes(q) ||
+        (teacher?.name || "").toLowerCase().includes(q) ||
+        (slot.room || "").toLowerCase().includes(q);
+    });
+  }, [slots, searchQuery, state.subjects, state.teachers]);
 
   const openSlot = (day: number, period: number) => {
-    const existing = slots.find(s => s.dayOfWeek === day && s.period === period);
+    const existing = filteredSlots.find(s => s.dayOfWeek === day && s.period === period);
     setEditing(existing ?? {
       id: crypto.randomUUID(),
       curriculumId: activeCurriculum,
@@ -64,9 +77,20 @@ export default function Timetable() {
           ? "You can edit this timetable. Changes sync to all devices."
           : "View-only. Only Senior Teacher or Principal can edit."}
         actions={
-          <Badge variant="outline" className={canEditTimetable ? "border-success text-success" : ""}>
-            {canEditTimetable ? <><Pencil className="h-3 w-3 mr-1"/>Editor</> : <><Lock className="h-3 w-3 mr-1"/>Read only</>}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search timetable..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-56"
+              />
+            </div>
+            <Badge variant="outline" className={canEditTimetable ? "border-success text-success" : ""}>
+              {canEditTimetable ? <><Pencil className="h-3 w-3 mr-1"/>Editor</> : <><Lock className="h-3 w-3 mr-1"/>Read only</>}
+            </Badge>
+          </div>
         }
       />
 
@@ -84,7 +108,7 @@ export default function Timetable() {
         </Select>
         <div className="flex items-center text-xs text-muted-foreground gap-2">
           <CalendarDays className="h-4 w-4"/>
-          {slots.length} slot{slots.length===1?"":"s"} · {(state.timetable ?? []).filter(t => t.pending).length} pending sync
+          {filteredSlots.length} slot{filteredSlots.length===1?"":"s"} · {(state.timetable ?? []).filter(t => t.pending).length} pending sync
         </div>
       </Card>
 
@@ -102,7 +126,7 @@ export default function Timetable() {
                 <td className="font-mono text-xs text-muted-foreground">P{p}</td>
                 {DAYS.map((_, di) => {
                   const day = di + 1;
-                  const slot = slots.find(s => s.dayOfWeek === day && s.period === p);
+                  const slot = filteredSlots.find(s => s.dayOfWeek === day && s.period === p);
                   const subject = slot ? state.subjects.find(s => s.id === slot.subjectId) : null;
                   const teacher = slot ? state.teachers.find(t => t.id === slot.teacherId) : null;
                   return (

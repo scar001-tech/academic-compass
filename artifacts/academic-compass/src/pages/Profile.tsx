@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
   User as UserIcon, Shield, Mail, Calendar, CheckCircle2, XCircle,
-  Crown, Users, Clock, Briefcase, Download, KeyRound,
+  Crown, Users, Clock, Briefcase, Download, KeyRound, Search,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -37,6 +37,7 @@ export default function Profile() {
   const { state } = useSchool();
   const [profiles, setProfiles]           = useState<ProfileItem[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [changeOpen, setChangeOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<ProfileItem | null>(null);
@@ -76,9 +77,17 @@ export default function Profile() {
     }
   };
 
-  useEffect(() => {
-    fetchProfiles();
-  }, [roles, state.teachers.length]); // eslint-disable-line
+      useEffect(() => {
+        fetchProfiles();
+      }, [roles, state.teachers.length]); // eslint-disable-line
+
+      const filteredProfiles = profiles.filter(p => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return true;
+        return (p.full_name || "").toLowerCase().includes(q) ||
+          p.email.toLowerCase().includes(q) ||
+          (p.department || "").toLowerCase().includes(q);
+      });
 
   const handleApprovalToggle = async (userId: string, currentlyApproved: boolean) => {
     try {
@@ -265,9 +274,20 @@ export default function Profile() {
                 As the Principal, you approve new sign-ups and assign or remove roles.
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={exportStaff} disabled={profiles.length === 0}>
-              <Download className="h-4 w-4 mr-1"/>Export Staff
-            </Button>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search staff..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 w-56"
+                />
+              </div>
+              <Button variant="outline" size="sm" onClick={exportStaff} disabled={profiles.length === 0}>
+                <Download className="h-4 w-4 mr-1"/>Export Staff
+              </Button>
+            </div>
           </div>
           <div className="overflow-x-auto border border-border rounded-lg min-w-[640px]">
             <table className="w-full text-sm text-left">
@@ -288,7 +308,9 @@ export default function Profile() {
                   <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">Loading registered staff profiles...</td></tr>
                 ) : profiles.length === 0 ? (
                   <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">No staff profiles registered.</td></tr>
-                ) : profiles.map((p) => {
+                ) : filteredProfiles.length === 0 ? (
+                  <tr><td colSpan={ALL_ROLES.length + 5} className="px-4 md:px-6 py-10 text-center text-muted-foreground">No staff match your search.</td></tr>
+                ) : filteredProfiles.map((p) => {
                   const isPrincipalRow = p.roles.includes("admin") || p.roles.includes("principal");
                   const isLocal = p.isLocal;
                   return (

@@ -57,13 +57,11 @@ export interface SchoolSnapshot {
   subjects: any[];
   exams: any[];
   sheets: any[];
-  entries: any[];
-  timetable: any[];
-  conflicts: any[];
   curricula: any[];
   settings: any;
   classRemarks: any[];
   principalRemarks: any[];
+  deletedIds: string[];
 }
 
 export async function pushMarkEntries(locals: Array<{
@@ -135,14 +133,10 @@ export async function resolveRemoteConflict(
   resolution: "server" | "this" | "custom",
   customValue?: string
 ) {
-  try {
-    await api.patch(`/conflicts/${encodeURIComponent(id)}`, {
-      resolution,
-      custom_value: customValue ?? null,
-    });
-  } catch (err) {
-    console.error("[resolveRemoteConflict]", err);
-  }
+  await api.patch(`/conflicts/${encodeURIComponent(id)}`, {
+    resolution,
+    custom_value: customValue ?? null,
+  });
 }
 
 export async function pushTimetableSlots(locals: Array<RemoteTimetableSlot & { _isNew?: boolean }>): Promise<Array<{ id: string; status: "ok" | "conflict" | "error" | "forbidden" }>> {
@@ -179,11 +173,7 @@ export async function pushTimetableSlot(
 }
 
 export async function deleteTimetableSlot(id: string) {
-  try {
-    await api.delete(`/timetable-slots/${encodeURIComponent(id)}`);
-  } catch (err) {
-    console.error("[deleteTimetableSlot]", err);
-  }
+  await api.delete(`/timetable-slots/${encodeURIComponent(id)}`);
 }
 
 export async function pushSchoolSnapshot(local: SchoolSnapshot): Promise<"ok" | "error"> {

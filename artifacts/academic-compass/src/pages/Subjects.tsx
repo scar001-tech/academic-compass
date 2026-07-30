@@ -2,11 +2,20 @@ import { useSchool } from "@/store/school";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Search, X } from "lucide-react";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
 
 export default function Subjects() {
   const { state, activeCurriculum, update } = useSchool();
-  const subjects = state.subjects.filter(s => s.curriculumId === activeCurriculum);
+  const [searchQuery, setSearchQuery] = useState("");
+  const subjects = state.subjects.filter(s => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return s.curriculumId === activeCurriculum;
+    return s.curriculumId === activeCurriculum && (
+      s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
+    );
+  });
   const teachers = state.teachers.filter(t => t.curriculumIds.includes(activeCurriculum));
 
   const add = () => update(s => {
@@ -16,7 +25,25 @@ export default function Subjects() {
   return (
     <div>
       <PageHeader title="Subjects" description="Manage subjects offered in this curriculum."
-        actions={<Button onClick={add}><Plus className="h-4 w-4 mr-1"/>Add subject</Button>} />
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search subjects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-56"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <Button onClick={add}><Plus className="h-4 w-4 mr-1"/>Add subject</Button>
+          </div>
+        } />
       <Card className="overflow-x-auto card-pad">
         <table className="data-table">
           <thead><tr><th>Code</th><th>Subject</th><th>Teacher</th><th></th></tr></thead>
@@ -35,7 +62,7 @@ export default function Subjects() {
                   </select>
                 </td>
                 <td>
-                  <Button variant="ghost" size="icon" onClick={() => update(s => { s.subjects = s.subjects.filter(x => x.id !== sub.id); })}>
+                  <Button variant="ghost" size="icon" onClick={() => update(s => { s.subjects = s.subjects.filter(x => x.id !== sub.id); s.deletedIds = [...(s.deletedIds ?? []), sub.id]; })}>
                     <Trash2 className="h-4 w-4 text-destructive"/>
                   </Button>
                 </td>
