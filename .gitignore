@@ -47,6 +47,15 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.replit
+.replitignore
+replit.md
+
+# AI Agent memory
+.agents/
+
+# Attached assets / exports
+attached_assets/
 
 # Environment variables
 .env
