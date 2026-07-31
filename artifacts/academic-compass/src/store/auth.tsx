@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 export type AppRole = "admin" | "principal" | "hod" | "class_teacher" | "subject_teacher" | "teacher" | "senior_teacher";
 
@@ -23,7 +24,7 @@ interface AuthCtx {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, full_name?: string, department?: string) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   hasRole: (...r: AppRole[]) => boolean;
   refreshRoles: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -71,7 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const clearSession = () => {
+  const clearSession = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setSession(null);
@@ -101,7 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     storeSession(token, user);
   }, []);
 
-  const signOut = useCallback(() => clearSession(), []);
+  const signOut = useCallback(async () => {
+    await clearSession();
+  }, []);
 
   const hasRole = useCallback((...r: AppRole[]) => r.some(x => roles.includes(x)), [roles]);
 

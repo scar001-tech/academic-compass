@@ -6,10 +6,11 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { School, KeyRound } from "lucide-react";
+import { School, KeyRound, Chrome } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/store/auth";
 import { DEPARTMENTS } from "@/lib/schoolData";
+import { supabase } from "@/lib/supabase";
 import Loading from "@/components/Loading";
 
 export default function Auth() {
@@ -71,6 +72,23 @@ export default function Auth() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) throw error;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Google sign-in failed";
+      toast.error(message);
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen grid place-items-center px-4 auth-bg">
       {busy ? (
@@ -129,6 +147,25 @@ export default function Auth() {
           />
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
+          </Button>
+
+          <div className="relative my-3">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={busy}
+            onClick={handleGoogleSignIn}
+          >
+            <Chrome className="h-4 w-4 mr-2" /> Google
           </Button>
         </form>
 

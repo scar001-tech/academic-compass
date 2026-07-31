@@ -9,6 +9,7 @@ import { AuthProvider } from "@/store/auth";
 import AppShell from "@/components/AppShell";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Classes from "./pages/Classes";
@@ -38,6 +39,7 @@ const App = () => (
             <Sonner />
             <Analytics />
             <Routes>
+              <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/auth" element={<Auth />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { gradeFor } from "@/lib/schoolData";
+import { gradeFor, type SheetStatus, type ID, type CurriculumId } from "@/lib/schoolData";
 import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { MarkEntry } from "@/lib/schoolData";
@@ -90,6 +90,25 @@ export default function MarkEntry() {
     return state.sheets.find(s => s.streamId === streamIdHint && s.subjectId === subjectId && s.examId === examId) || null;
   }, [state.sheets, subjectId, examId]);
 
+  const ensureSheetFor = (streamId: string, classIdHint?: string) => {
+    if (!subjectId || !examId || !streamId) return null;
+    const existing = state.sheets.find(s => s.streamId === streamId && s.subjectId === subjectId && s.examId === examId);
+    if (existing) return existing;
+    const newSheet = {
+      id: `${activeCurriculum}_${classIdHint || classId}_${streamId}_${subjectId}_${examId}` as ID,
+      curriculumId: activeCurriculum,
+      classId: classIdHint || classId || "",
+      streamId,
+      subjectId,
+      examId,
+      status: "draft" as SheetStatus,
+      locked: false,
+      updatedAt: Date.now(),
+    };
+    update(s => { s.sheets.push(newSheet); });
+    return newSheet;
+  };
+
   const initializedRef = useRef("");
   useEffect(() => {
     const key = `${examId}::${subjectId}::${totalStudents}`;
@@ -150,8 +169,12 @@ export default function MarkEntry() {
   const changeScore = (studentId: string, subjectId: string, raw: string) => {
     const stu = state.students.find(s => s.id === studentId);
     if (!stu) return;
-    const sheetForSubject = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
-    if (!sheetForSubject) return;
+    let sheetForSubject = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
+    if (!sheetForSubject) {
+      const created = ensureSheetFor(stu.streamId, stu.classId);
+      if (!created) return;
+      sheetForSubject = created;
+    }
 
     if (raw === "") {
       const existing = state.entries.find(e => e.sheetId === sheetForSubject.id && e.studentId === studentId);
@@ -319,8 +342,19 @@ export default function MarkEntry() {
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer);
+
+      if (!workbook.SheetNames.length) {
+        toast.error("The file appears to have no sheets. Please upload a valid Excel/CSV file.");
+        return;
+      }
+
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
+
+      if (!sheet || !sheet["!ref"]) {
+        toast.error("The selected sheet is empty or unreadable");
+        return;
+      }
 
       const rawRows = XLSX.utils.sheet_to_json<any>(sheet, { header: 1, defval: "" });
 
@@ -329,13 +363,14 @@ export default function MarkEntry() {
         return;
       }
 
+      const looksLikeSystemNoise = (value: string) => /environment_details|system_prompt|user_prompt|current_time|workspace_root|open_tabs|^\s*\{/.test(value.trim().toLowerCase());
+
       const normalizeHeader = (h: string) => String(h).trim().toLowerCase().replace(/[\s.\-_\/()]/g, "");
 
       const findHeaderRow = (rows: any[][]): { rowIndex: number; headers: string[] } | null => {
-        const maxCols = Math.max(...rows.map(r => r.length));
         for (let i = 0; i < Math.min(rows.length, 20); i++) {
           const row = rows[i];
-          const values = row.map((v: any) => String(v).trim()).filter(Boolean);
+          const values = row.map((v: any) => String(v).trim()).filter((v) => v && !looksLikeSystemNoise(v));
           if (values.length < 2) continue;
 
           const normalizedHeaders = values.map(normalizeHeader);
@@ -352,7 +387,7 @@ export default function MarkEntry() {
       const detected = findHeaderRow(rawRows);
 
       if (!detected) {
-        const firstRow = (rawRows[0] || []).map((v: any) => String(v)).filter(Boolean).slice(0, 5).join(", ") || "(blank)";
+        const firstRow = (rawRows[0] || []).map((v: any) => String(v)).filter((v: any) => v && !looksLikeSystemNoise(v)).slice(0, 5).join(", ") || "(blank)";
         toast.error(`No recognizable header row found. First row sample: ${firstRow}`);
         return;
       }
@@ -497,7 +532,7 @@ export default function MarkEntry() {
                               <Input
                                 type="number" min={0} max={100}
                                 className="h-9 w-24"
-                                disabled={!sheet || sheet.locked || !canEnterMarks}
+                                disabled={!canEnterMarks}
                                 value={draft}
                                 onChange={(ev) => setDrafts((prev) => ({ ...prev, [key]: ev.target.value }))}
                                 onBlur={(ev) => {

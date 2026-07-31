@@ -102,6 +102,7 @@ async function buildAll() {
       "electron",
       "dotenv",
       "pg",
+      "@supabase/supabase-js",
 
     ],
     sourcemap: "linked",

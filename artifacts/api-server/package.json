@@ -11,11 +11,13 @@
     },
     "dependencies": {
         "@workspace/api-zod": "workspace:*",
+        "@supabase/supabase-js": "^2.49.8",
         "bcryptjs": "^3.0.3",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.6",
         "express": "^5.2.1",
         "jsonwebtoken": "^9.0.3",
+        "pg": "^8.16.0",
         "pino": "^9.14.0",
         "pino-http": "^10.5.0",
         "zod": "catalog:"
@@ -27,6 +29,7 @@
         "@types/express": "^5.0.6",
         "@types/jsonwebtoken": "^9.0.10",
         "@types/node": "catalog:",
+        "@types/pg": "^8.15.2",
         "dotenv": "^17.4.2",
         "esbuild": "0.27.3",
         "esbuild-plugin-pino": "^2.3.3",
