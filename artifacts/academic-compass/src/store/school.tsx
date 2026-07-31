@@ -101,9 +101,26 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
           version: e.version ?? 1,
           deviceName: s.deviceName,
         })));
+        const syncedIds = new Set<string>();
         for (const r of results) {
-          if (r.status === "ok") pushed++;
-          else if (r.status === "conflict") conflicted++;
+          if (r.status === "ok") {
+            pushed++;
+            syncedIds.add(r.id);
+          } else if (r.status === "conflict") {
+            conflicted++;
+          }
+        }
+        if (syncedIds.size > 0) {
+          update((n) => {
+            for (const id of syncedIds) {
+              const e = n.entries.find(x => x.id === id);
+              if (e) {
+                e.pending = false;
+                e.version = (e.version ?? 1) + 1;
+              }
+            }
+            n.syncQueue = n.entries.filter(e => e.pending).map(e => e.id);
+          });
         }
       }
 
