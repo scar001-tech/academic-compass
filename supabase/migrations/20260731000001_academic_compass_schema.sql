@@ -18,8 +18,8 @@ GRANT ALL ON public.profiles TO service_role;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Profiles viewable by authed" ON public.profiles FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
-CREATE POLICY "Users insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid()::TEXT = id);
+CREATE POLICY "Users insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid()::TEXT = id);
 
 -- User roles table (matches ac_user_roles)
 CREATE TABLE IF NOT EXISTS public.user_roles (
@@ -33,9 +33,9 @@ GRANT ALL ON public.user_roles TO service_role;
 
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users view own roles" ON public.user_roles FOR SELECT TO authenticated USING (user_id = auth.uid());
-CREATE POLICY "Users insert own roles" ON public.user_roles FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
-CREATE POLICY "Users delete own roles" ON public.user_roles FOR DELETE TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "Users view own roles" ON public.user_roles FOR SELECT TO authenticated USING (user_id = auth.uid()::TEXT);
+CREATE POLICY "Users insert own roles" ON public.user_roles FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid()::TEXT);
+CREATE POLICY "Users delete own roles" ON public.user_roles FOR DELETE TO authenticated USING (user_id = auth.uid()::TEXT);
 
 -- Role helper function
 CREATE OR REPLACE FUNCTION public.has_role(_user_id TEXT, _role TEXT)
