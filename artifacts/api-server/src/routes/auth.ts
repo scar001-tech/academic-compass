@@ -29,6 +29,15 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+async function isSupabaseAvailable(): Promise<boolean> {
+  try {
+    const { error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 const signupSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -139,19 +148,42 @@ router.post("/signup", async (req, res) => {
 
     const isFirst = !(await store.hasAnyProfile());
     const approved = isFirst;
+    const supabaseAvailable = await isSupabaseAvailable();
+    let id: string;
 
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: full_name || "", department: department || "" },
-    });
+    if (supabaseAvailable) {
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: full_name || "", department: department || "" },
+      });
 
-    if (authError || !authData.user) {
-      return res.status(400).json({ message: authError?.message || "Failed to create user in Supabase Auth" });
+      if (authError || !authData.user) {
+        return res.status(400).json({ message: authError?.message || "Failed to create user in Supabase Auth" });
+      }
+
+      id = authData.user.id;
+    } else {
+      id = randomUUID();
+      const passwordHash = await bcrypt.hash(password, 12);
+      await store.createProfile({
+        id,
+        email,
+        passwordHash,
+        fullName: full_name || null,
+        department: department || null,
+        approved,
+        roles: isFirst ? ["admin", "principal"] : [],
+      });
+
+      const token = makeToken(id);
+      return res.status(201).json({
+        token,
+        user: { id, email, full_name: full_name || null, department: department || null, approved },
+      });
     }
 
-    const id = authData.user.id;
     await store.createProfile({
       id,
       email,
@@ -181,45 +213,74 @@ router.post("/signin", async (req, res) => {
     if (!parsed.success) return res.status(400).json(validationError(parsed.error));
     const { email, password } = parsed.data;
 
-    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const supabaseAvailable = await isSupabaseAvailable();
+    let profile = null;
 
-    if (error || !data.user) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    const store = await getStore();
-    let profile = await store.getProfileById(data.user.id);
-    if (!profile) {
-      await store.createProfile({
-        id: data.user.id,
-        email: data.user.email!,
-        passwordHash: "supabase-managed",
-        fullName: data.user.user_metadata?.full_name || null,
-        department: data.user.user_metadata?.department || null,
-        approved: true,
-        roles: [],
+    if (supabaseAvailable) {
+      const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+        email,
+        password,
       });
-      profile = await store.getProfileById(data.user.id);
-      if (!profile) return res.status(500).json({ message: "Internal server error" });
-    }
 
-    if (!profile.approved && process.env.DEV_BYPASS_APPROVAL === "true") {
-      await store.setApproval(profile.id, true);
-    }
+      if (error || !data.user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
 
-    const currentRoles = await store.rolesForUser(profile.id);
-    if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
-      await store.assignRole(profile.id, "teacher", "add");
-    }
+      const store = await getStore();
+      let profile = await store.getProfileById(data.user.id);
+      if (!profile) {
+        await store.createProfile({
+          id: data.user.id,
+          email: data.user.email!,
+          passwordHash: "supabase-managed",
+          fullName: data.user.user_metadata?.full_name || null,
+          department: data.user.user_metadata?.department || null,
+          approved: true,
+          roles: [],
+        });
+        profile = await store.getProfileById(data.user.id);
+        if (!profile) return res.status(500).json({ message: "Internal server error" });
+      }
 
-    const token = makeToken(profile.id);
-    return res.json({
-      token,
-      user: { id: profile.id, email: profile.email, full_name: profile.fullName, department: profile.department, approved: profile.approved },
-    });
+      if (!profile.approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+        await store.setApproval(profile.id, true);
+      }
+
+      const currentRoles = await store.rolesForUser(profile.id);
+      if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
+        await store.assignRole(profile.id, "teacher", "add");
+      }
+
+      const token = makeToken(profile.id);
+      return res.json({
+        token,
+        user: { id: profile.id, email: profile.email, full_name: profile.fullName, department: profile.department, approved: profile.approved },
+      });
+    } else {
+      const store = await getStore();
+      profile = await store.getProfileByEmail(email);
+      if (!profile || profile.passwordHash === "supabase-managed") {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      const ok = await bcrypt.compare(password, profile.passwordHash);
+      if (!ok) return res.status(401).json({ message: "Invalid email or password" });
+
+      if (!profile.approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+        await store.setApproval(profile.id, true);
+        profile.approved = true;
+      }
+
+      const currentRoles = await store.rolesForUser(profile.id);
+      if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
+        await store.assignRole(profile.id, "teacher", "add");
+      }
+
+      const token = makeToken(profile.id);
+      return res.json({
+        token,
+        user: { id: profile.id, email: profile.email, full_name: profile.fullName, department: profile.department, approved: profile.approved },
+      });
+    }
   } catch (err) {
     console.error("[signin]", err);
     return res.status(500).json({ message: "Internal server error" });
@@ -299,19 +360,46 @@ router.post("/create-staff", authenticateJWT, requireRoles("admin", "principal")
     const existing = await store.getProfileByEmail(email);
     if (existing) return res.status(409).json({ message: "Email already registered" });
     const finalPassword = password || generateTempPassword();
+    const supabaseAvailable = await isSupabaseAvailable();
+    let id: string;
 
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: finalPassword,
-      email_confirm: true,
-      user_metadata: { full_name: full_name || "", department: department || "" },
-    });
+    if (supabaseAvailable) {
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: finalPassword,
+        email_confirm: true,
+        user_metadata: { full_name: full_name || "", department: department || "" },
+      });
 
-    if (authError || !authData.user) {
-      return res.status(400).json({ message: authError?.message || "Failed to create user in Supabase Auth" });
+      if (authError || !authData.user) {
+        return res.status(400).json({ message: authError?.message || "Failed to create user in Supabase Auth" });
+      }
+
+      id = authData.user.id;
+    } else {
+      id = randomUUID();
+      const passwordHash = await bcrypt.hash(finalPassword, 12);
+      await store.createProfile({
+        id,
+        email,
+        passwordHash,
+        fullName: full_name || null,
+        department: department || null,
+        approved: true,
+        roles: [role],
+      });
+
+      return res.status(201).json({
+        id,
+        email,
+        full_name: full_name || null,
+        department: department || null,
+        approved: true,
+        roles: [role],
+        temp_password: finalPassword,
+      });
     }
 
-    const id = authData.user.id;
     await store.createProfile({
       id,
       email,
@@ -359,9 +447,25 @@ router.post("/change-password", authenticateJWT, async (req: any, res) => {
     const profile = await (await getStore()).getProfileById(req.userId);
     if (!profile) return res.status(404).json({ message: "Profile not found" });
 
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.userId, { password: newPassword });
-    if (error) return res.status(400).json({ message: error.message });
+    const supabaseAvailable = await isSupabaseAvailable();
+    if (supabaseAvailable && profile.passwordHash !== "supabase-managed") {
+      const ok = await bcrypt.compare(currentPassword, profile.passwordHash);
+      if (!ok) return res.status(401).json({ message: "Current password is incorrect" });
+      const newHash = await bcrypt.hash(newPassword, 12);
+      await (await getStore()).updatePassword(req.userId, newHash);
+      return res.json({ ok: true });
+    }
 
+    if (profile.passwordHash === "supabase-managed") {
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(req.userId, { password: newPassword });
+      if (error) return res.status(400).json({ message: error.message });
+      return res.json({ ok: true });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, profile.passwordHash);
+    if (!ok) return res.status(401).json({ message: "Current password is incorrect" });
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await (await getStore()).updatePassword(req.userId, newHash);
     return res.json({ ok: true });
   } catch (err) {
     console.error("[change-password]", err);
@@ -374,8 +478,18 @@ router.post("/admin-reset-password", authenticateJWT, requireRoles("admin", "pri
     const parsed = adminResetPasswordSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(validationError(parsed.error));
     const { userId, newPassword } = parsed.data;
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: newPassword });
-    if (error) return res.status(400).json({ message: error.message });
+    const profile = await (await getStore()).getProfileById(userId);
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+    const supabaseAvailable = await isSupabaseAvailable();
+    if (supabaseAvailable && profile.passwordHash === "supabase-managed") {
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: newPassword });
+      if (error) return res.status(400).json({ message: error.message });
+      return res.json({ ok: true });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await (await getStore()).updatePassword(userId, newHash);
     return res.json({ ok: true });
   } catch (err) {
     console.error("[admin-reset-password]", err);
@@ -391,8 +505,15 @@ router.post("/forgot-password", async (req, res) => {
     const profile = await (await getStore()).getProfileByEmail(email);
     if (!profile) return res.status(404).json({ message: "No account found with that email address" });
 
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(profile.id, { password: newPassword });
-    if (error) return res.status(400).json({ message: error.message });
+    const supabaseAvailable = await isSupabaseAvailable();
+    if (supabaseAvailable && profile.passwordHash === "supabase-managed") {
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(profile.id, { password: newPassword });
+      if (error) return res.status(400).json({ message: error.message });
+      return res.json({ ok: true, message: "Password has been reset successfully. You can now sign in with your new password." });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await (await getStore()).updatePassword(profile.id, newHash);
     return res.json({ ok: true, message: "Password has been reset successfully. You can now sign in with your new password." });
   } catch (err) {
     console.error("[forgot-password]", err);
