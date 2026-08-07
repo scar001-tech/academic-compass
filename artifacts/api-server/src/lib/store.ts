@@ -68,6 +68,21 @@ export interface SyncConflictRow {
   resolvedAt: Date | null;
 }
 
+export interface SmsLogRow {
+  id: string;
+  studentId: string;
+  admissionNo: string;
+  studentName: string;
+  parentNumber: string;
+  examId: string;
+  examName: string;
+  provider: string;
+  status: string;
+  messageId: string | null;
+  error: string | null;
+  sentAt: Date;
+}
+
 interface DataStore {
   getProfileByEmail(email: string): Promise<ProfileRow | null>;
   getProfileById(id: string): Promise<ProfileRow | null>;
@@ -147,6 +162,19 @@ interface DataStore {
   resolveConflict(id: string, resolution: string | null, customValue?: string | null): Promise<void>;
   getSchoolSnapshot(): Promise<{ id: string; data: string; updatedAt: string } | null>;
   setSchoolSnapshot(data: string): Promise<void>;
+  listSmsLogs(filters?: { studentId?: string; examId?: string; status?: string }): Promise<SmsLogRow[]>;
+  createSmsLog(input: {
+    studentId: string;
+    admissionNo: string;
+    studentName: string;
+    parentNumber: string;
+    examId: string;
+    examName: string;
+    provider: string;
+    status: string;
+    messageId?: string | null;
+    error?: string | null;
+  }): Promise<void>;
 }
 
 let storePromise: Promise<DataStore> | null = null;
@@ -243,6 +271,20 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
       id TEXT PRIMARY KEY DEFAULT 'global',
       data TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS ac_sms_logs (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      admission_no TEXT NOT NULL,
+      student_name TEXT NOT NULL,
+      parent_number TEXT NOT NULL,
+      exam_id TEXT NOT NULL,
+      exam_name TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message_id TEXT,
+      error TEXT,
+      sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -479,6 +521,33 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
     },
     async setSchoolSnapshot(data) {
       runResult(sqliteDb as any, "INSERT INTO ac_school_data (id, data, updated_at) VALUES ('global', ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at", data, new Date().toISOString());
+    },
+    async listSmsLogs(filters) {
+      const where: string[] = [];
+      const args: any[] = [];
+      if (filters?.studentId) { where.push("student_id = ?"); args.push(filters.studentId); }
+      if (filters?.examId) { where.push("exam_id = ?"); args.push(filters.examId); }
+      if (filters?.status) { where.push("status = ?"); args.push(filters.status); }
+      const sql = "SELECT * FROM ac_sms_logs" + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY sent_at DESC";
+      const rows = (sqliteDb as any).prepare(sql).all(...args);
+      return rows.map((row: any) => ({
+        id: row.id,
+        studentId: row.student_id,
+        admissionNo: row.admission_no,
+        studentName: row.student_name,
+        parentNumber: row.parent_number,
+        examId: row.exam_id,
+        examName: row.exam_name,
+        provider: row.provider,
+        status: row.status,
+        messageId: row.message_id,
+        error: row.error,
+        sentAt: new Date(row.sent_at),
+      }));
+    },
+    async createSmsLog(input) {
+      runResult(sqliteDb as any, `INSERT INTO ac_sms_logs (id, student_id, admission_no, student_name, parent_number, exam_id, exam_name, provider, status, message_id, error, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, randomUUID(), input.studentId, input.admissionNo, input.studentName, input.parentNumber, input.examId, input.examName, input.provider, input.status, input.messageId ?? null, input.error ?? null, new Date().toISOString());
     },
   };
 }
@@ -744,6 +813,36 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
         `INSERT INTO school_data (id, data, updated_at) VALUES ('global', $1, $2)
          ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = $2`,
         [data, new Date().toISOString()]
+      );
+    },
+    async listSmsLogs(filters) {
+      const conditions: string[] = [];
+      const args: any[] = [];
+      if (filters?.studentId) { conditions.push("student_id = $" + (args.length + 1)); args.push(filters.studentId); }
+      if (filters?.examId) { conditions.push("exam_id = $" + (args.length + 1)); args.push(filters.examId); }
+      if (filters?.status) { conditions.push("status = $" + (args.length + 1)); args.push(filters.status); }
+      const sql = "SELECT * FROM sms_logs" + (conditions.length ? " WHERE " + conditions.join(" AND ") : "") + " ORDER BY sent_at DESC";
+      const result = await pool.query(sql, args);
+      return result.rows.map((row) => ({
+        id: row.id,
+        studentId: row.student_id,
+        admissionNo: row.admission_no,
+        studentName: row.student_name,
+        parentNumber: row.parent_number,
+        examId: row.exam_id,
+        examName: row.exam_name,
+        provider: row.provider,
+        status: row.status,
+        messageId: row.message_id,
+        error: row.error,
+        sentAt: row.sent_at,
+      }));
+    },
+    async createSmsLog(input) {
+      await pool.query(
+        `INSERT INTO sms_logs (id, student_id, admission_no, student_name, parent_number, exam_id, exam_name, provider, status, message_id, error, sent_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [randomUUID(), input.studentId, input.admissionNo, input.studentName, input.parentNumber, input.examId, input.examName, input.provider, input.status, input.messageId ?? null, input.error ?? null, new Date().toISOString()]
       );
     },
   };

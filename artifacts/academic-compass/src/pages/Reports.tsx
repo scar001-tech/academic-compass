@@ -12,7 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
 } from "recharts";
 import { statsForStudentExam, type CurriculumId, type ID } from "@/lib/schoolData";
-import { Printer, ChevronLeft, ChevronRight, Search, Download } from "lucide-react";
+import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 const BLUE = "#2E86C1";
@@ -27,6 +27,7 @@ export default function Reports() {
   const [params] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [sendingSms, setSendingSms] = useState(false);
 
   const curricula = state.curricula;
 
@@ -470,6 +471,34 @@ export default function Reports() {
             <SummaryBox label="Total Points" value={latestStats.totalPoints.toFixed(0)} />
             <SummaryBox label="Stream Pos." value={streamPosition ? `${streamPosition.rank} / ${streamPosition.total}` : "—"} />
             <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
+          </section>
+
+          {/* Actions */}
+          <section className="flex flex-wrap gap-2 py-2 border-b">
+            <Button variant="default" size="sm" onClick={async () => {
+              if (!student || !latestExam || !latestStats) { toast.error("No student or exam selected"); return; }
+              setSendingSms(true);
+              try {
+                const res = await fetch("/api/sms/send-report", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    studentId: student.id,
+                    examId: latestExam.id,
+                    rows: filledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
+                  }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || "Failed to send SMS");
+                toast.success(data.message || "Report card SMS sent successfully");
+              } catch (err: any) {
+                toast.error(err.message || "Failed to send SMS");
+              } finally {
+                setSendingSms(false);
+              }
+            }} disabled={!student || !latestExam || sendingSms || !(isPrincipal || isSeniorTeacher)}>
+              <MessageSquare className="h-4 w-4 mr-1"/> {sendingSms ? "Sending..." : "Send Report Card SMS"}
+            </Button>
           </section>
 
           {/* Charts Row */}

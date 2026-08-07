@@ -79,6 +79,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "@vercel/analytics": "^2.0.1",
+    "jspdf": "^4.2.1",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",
