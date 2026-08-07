@@ -77,6 +77,14 @@ export interface Student {
   vap: string; // Values-Attitudes-Personality note
   guardianPhone?: string;
   feeBalance?: number;
+  religion?: string;
+  dateOfAdmission?: string;
+  house?: string;
+  gradeEntryType?: string;
+  dateOfBirth?: string;
+  parentName?: string;
+  parentNumber?: string;
+  parentIdNumber?: string;
 }
 
 export interface Exam {

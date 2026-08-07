@@ -445,6 +445,22 @@ export default function Reports() {
               onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).kcpe = v; })}/>
             <Field label="VAP" value={student.vap} disabled={!canManageStudents}
               onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) x.vap = v; })}/>
+            <Field label="Religion" value={(student as any).religion || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).religion = v; })}/>
+            <Field label="Date of Birth" value={(student as any).dateOfBirth || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).dateOfBirth = v; })}/>
+            <Field label="Adm. Date" value={(student as any).dateOfAdmission || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).dateOfAdmission = v; })}/>
+            <Field label="House" value={(student as any).house || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).house = v; })}/>
+            <Field label="Grade Entry" value={(student as any).gradeEntryType || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).gradeEntryType = v; })}/>
+            <Field label="Parent Name" value={(student as any).parentName || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentName = v; })}/>
+            <Field label="Parent No." value={(student as any).parentNumber || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentNumber = v; })}/>
+            <Field label="Parent ID" value={(student as any).parentIdNumber || ""} disabled={!canManageStudents}
+              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentIdNumber = v; })}/>
           </section>
 
           {/* Summary Boxes */}

@@ -48,6 +48,8 @@ export default function Students() {
       s.students.push({
         id, curriculumId: activeCurriculum, admissionNo: `NEW/${s.students.length+1}/${s.settings.academicYear}`,
         name: "New Student", gender: "M", classId: cls.id, streamId: stream.id, vap: "",
+        religion: "", dateOfAdmission: new Date().toISOString().slice(0,10), house: "", gradeEntryType: "", dateOfBirth: "",
+        parentName: "", parentNumber: "", parentIdNumber: "",
       });
     });
     toast.success("Student added — edit their details inline");
@@ -70,6 +72,14 @@ export default function Students() {
         Class: cls?.name || "",
         Stream: stream?.name || "",
         VAP: s.vap || "",
+        Religion: (s as any).religion || "",
+        DOB: (s as any).dateOfBirth || "",
+        "Adm. Date": (s as any).dateOfAdmission || "",
+        House: (s as any).house || "",
+        "Grade Entry": (s as any).gradeEntryType || "",
+        "Parent Name": (s as any).parentName || "",
+        "Parent No.": (s as any).parentNumber || "",
+        "Parent ID": (s as any).parentIdNumber || "",
       };
     });
     const worksheet = XLSX.utils.json_to_sheet(data);
@@ -204,6 +214,14 @@ export default function Students() {
           classId,
           streamId,
           vap: "",
+          religion: "",
+          dateOfAdmission: new Date().toISOString().slice(0,10),
+          house: "",
+          gradeEntryType: "",
+          dateOfBirth: "",
+          parentName: "",
+          parentNumber: "",
+          parentIdNumber: "",
         });
       });
     });
@@ -259,6 +277,7 @@ export default function Students() {
           <thead>
             <tr>
               <th>Adm. No.</th><th>Name</th><th>Gender</th><th>Class</th><th>Stream</th><th>VAP</th>
+              <th>Religion</th><th>DOB</th><th>Adm. Date</th><th>House</th><th>Grade Entry</th><th>Parent Name</th><th>Parent No.</th><th>Parent ID</th>
               {canManageStudents && <th></th>}
             </tr>
           </thead>
@@ -300,6 +319,45 @@ export default function Students() {
                     <input className="inline-edit w-full text-xs" value={s.vap} disabled={!canManageStudents}
                       onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) x.vap = e.target.value; })} />
                   </td>
+                  <td>
+                    <input className="inline-edit w-24" value={(s as any).religion || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).religion = e.target.value; })} />
+                  </td>
+                  <td>
+                    <input type="date" className="inline-edit w-36" value={(s as any).dateOfBirth || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).dateOfBirth = e.target.value; })} />
+                  </td>
+                  <td>
+                    <input type="date" className="inline-edit w-36" value={(s as any).dateOfAdmission || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).dateOfAdmission = e.target.value; })} />
+                  </td>
+                  <td>
+                    <select className="inline-edit" value={(s as any).house || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).house = e.target.value; })}>
+                      <option value="">—</option>
+                      <option value="LENANA">LENANA</option>
+                      <option value="KILIMAMBOGO">KILIMAMBOGO</option>
+                      <option value="TANA">TANA</option>
+                      <option value="LUKENYA">LUKENYA</option>
+                      <option value="ATHI">ATHI</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input className="inline-edit w-28" value={(s as any).gradeEntryType || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).gradeEntryType = e.target.value; })} />
+                  </td>
+                  <td>
+                    <input className="inline-edit w-36" value={(s as any).parentName || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).parentName = e.target.value; })} />
+                  </td>
+                  <td>
+                    <input className="inline-edit w-28" value={(s as any).parentNumber || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).parentNumber = e.target.value; })} />
+                  </td>
+                  <td>
+                    <input className="inline-edit w-28" value={(s as any).parentIdNumber || ""} disabled={!canManageStudents}
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).parentIdNumber = e.target.value; })} />
+                  </td>
                   {canManageStudents && (
                     <td>
                       <Button size="icon" variant="ghost" onClick={() => removeStudent(s.id)}>
@@ -311,7 +369,7 @@ export default function Students() {
               );
             })}
             {students.length === 0 && (
-              <tr><td colSpan={canManageStudents ? 7 : 6} className="text-center text-muted-foreground py-8">No students match filters</td></tr>
+              <tr><td colSpan={canManageStudents ? 15 : 14} className="text-center text-muted-foreground py-8">No students match filters</td></tr>
             )}
           </tbody>
         </table>
