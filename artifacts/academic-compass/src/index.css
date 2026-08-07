@@ -286,18 +286,18 @@
   }
 
   .a4-sheet {
-    @apply mx-auto bg-card border rounded-lg shadow-sm p-6 max-w-[780px] text-sm;
+    @apply mx-auto bg-card border rounded-lg shadow-sm p-8 max-w-[820px] text-base;
   }
 
   @media print {
     @page {
       size: A4;
-      margin: 10mm;
+      margin: 8mm;
     }
 
     html, body {
       background: #fff !important;
-      font-size: 11px;
+      font-size: 12px;
     }
 
     .no-print {
@@ -328,7 +328,7 @@
 
     .print-page table {
       break-inside: avoid;
-      font-size: 10px;
+      font-size: 11px;
     }
 
     .print-page input,
@@ -341,20 +341,20 @@
     }
 
     .print-page header {
-      padding-bottom: 6px !important;
-      margin-bottom: 6px !important;
+      padding-bottom: 10px !important;
+      margin-bottom: 10px !important;
     }
 
     .print-page section {
-      padding-top: 6px !important;
-      padding-bottom: 6px !important;
+      padding-top: 8px !important;
+      padding-bottom: 8px !important;
       margin-top: 0 !important;
       margin-bottom: 0 !important;
     }
 
     .print-page .h-36,
     .print-page .h-48 {
-      height: 100px !important;
+      height: 120px !important;
     }
   }
 

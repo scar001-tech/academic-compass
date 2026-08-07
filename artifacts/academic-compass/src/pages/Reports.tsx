@@ -363,6 +363,30 @@ export default function Reports() {
             <Button size="sm" variant="outline" onClick={() => navigate(-1)}><ChevronLeft className="h-4 w-4"/></Button>
             <Button size="sm" variant="outline" onClick={() => navigate(1)}><ChevronRight className="h-4 w-4"/></Button>
             <Button size="sm" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1"/>Print</Button>
+            <Button size="sm" variant="default" disabled={!student || !latestExam || sendingSms || !(isPrincipal || isSeniorTeacher)} onClick={async () => {
+              if (!student || !latestExam || !latestStats) { toast.error("No student or exam selected"); return; }
+              setSendingSms(true);
+              try {
+                const res = await fetch("/api/sms/send-report", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    studentId: student.id,
+                    examId: latestExam.id,
+                    rows: filledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
+                  }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || "Failed to send SMS");
+                toast.success(data.message || "Report card SMS sent successfully");
+              } catch (err: any) {
+                toast.error(err.message || "Failed to send SMS");
+              } finally {
+                setSendingSms(false);
+              }
+            }}>
+              <MessageSquare className="h-4 w-4 mr-1"/> {sendingSms ? "Sending..." : "Send SMS"}
+            </Button>
           </div>
         }
       />
@@ -413,22 +437,22 @@ export default function Reports() {
         <div className="a4-sheet print-page">
           {/* Blue Header Bar */}
           <header className="rounded-t-lg overflow-hidden" style={{ backgroundColor: BLUE }}>
-            <div className="px-4 py-3 text-white">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded bg-white/20 flex items-center justify-center text-white font-bold text-[10px] border border-white/30 overflow-hidden">
+            <div className="px-6 py-5 text-white">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-16 w-16 rounded bg-white/20 flex items-center justify-center text-white font-bold text-xs border border-white/30 overflow-hidden">
                   <img src="/school_logo.jpg" alt="School logo" className="h-full w-full object-contain" />
                 </div>
                   <div>
-                    <div className="font-bold text-sm md:text-base leading-tight">{state.settings.schoolName || "HIGHWAY SECONDARY SCHOOL"}</div>
-                    <div className="text-[10px] text-white/80 leading-tight">{state.settings.address || "P.O BOX 1234, NAIROBI"}</div>
-                    <div className="text-[10px] text-white/80">PHONE: +254 700 000 000 | EMAIL: info@school.ac.ke</div>
+                    <div className="font-bold text-xl md:text-2xl leading-tight">{state.settings.schoolName || "HIGHWAY SECONDARY SCHOOL"}</div>
+                    <div className="text-sm text-white/90 leading-tight mt-1">{state.settings.address || "P.O BOX 1234, NAIROBI"}</div>
+                    <div className="text-sm text-white/90 mt-1">PHONE: +254 700 000 000 | EMAIL: info@school.ac.ke</div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">Academic Report Form</div>
-                  <div className="text-xs font-bold">{cls?.name || "FORM"} — END OF TERM EXAMS</div>
-                  <div className="text-xs">({latestExam.year} — TERM {latestExam.term})</div>
+                  <div className="text-sm font-semibold uppercase tracking-wide text-white/90">Academic Report Form</div>
+                  <div className="text-lg font-bold">{cls?.name || "FORM"} — END OF TERM EXAMS</div>
+                  <div className="text-base">({latestExam.year} — TERM {latestExam.term})</div>
                 </div>
               </div>
             </div>
@@ -456,12 +480,6 @@ export default function Reports() {
               onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).house = v; })}/>
             <Field label="Grade Entry" value={(student as any).gradeEntryType || ""} disabled={!canManageStudents}
               onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).gradeEntryType = v; })}/>
-            <Field label="Parent Name" value={(student as any).parentName || ""} disabled={!canManageStudents}
-              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentName = v; })}/>
-            <Field label="Parent No." value={(student as any).parentNumber || ""} disabled={!canManageStudents}
-              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentNumber = v; })}/>
-            <Field label="Parent ID" value={(student as any).parentIdNumber || ""} disabled={!canManageStudents}
-              onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).parentIdNumber = v; })}/>
           </section>
 
           {/* Summary Boxes */}
@@ -471,34 +489,6 @@ export default function Reports() {
             <SummaryBox label="Total Points" value={latestStats.totalPoints.toFixed(0)} />
             <SummaryBox label="Stream Pos." value={streamPosition ? `${streamPosition.rank} / ${streamPosition.total}` : "—"} />
             <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
-          </section>
-
-          {/* Actions */}
-          <section className="flex flex-wrap gap-2 py-2 border-b">
-            <Button variant="default" size="sm" onClick={async () => {
-              if (!student || !latestExam || !latestStats) { toast.error("No student or exam selected"); return; }
-              setSendingSms(true);
-              try {
-                const res = await fetch("/api/sms/send-report", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    studentId: student.id,
-                    examId: latestExam.id,
-                    rows: filledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
-                  }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.message || "Failed to send SMS");
-                toast.success(data.message || "Report card SMS sent successfully");
-              } catch (err: any) {
-                toast.error(err.message || "Failed to send SMS");
-              } finally {
-                setSendingSms(false);
-              }
-            }} disabled={!student || !latestExam || sendingSms || !(isPrincipal || isSeniorTeacher)}>
-              <MessageSquare className="h-4 w-4 mr-1"/> {sendingSms ? "Sending..." : "Send Report Card SMS"}
-            </Button>
           </section>
 
           {/* Charts Row */}
