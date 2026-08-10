@@ -155,7 +155,7 @@ export default function Reports() {
     if (!student || !latestExam) return;
     update(s => {
       const idx = s.principalRemarks.findIndex(r => r.studentId === student.id && r.examId === latestExam.id);
-      const entry = { studentId: student.id, examId: latestExam.id, remark: e.target.value, principalName: "Dr. Joseph Mwangi", updatedAt: Date.now() };
+      const entry = { studentId: student.id, examId: latestExam.id, remark: e.target.value, principalName: "", updatedAt: Date.now() };
       if (idx >= 0) s.principalRemarks[idx] = entry;
       else s.principalRemarks.push(entry);
     });
@@ -317,7 +317,7 @@ export default function Reports() {
                 studentId: newStudents.find(stu => stu.classId === classId && stu.streamId === streamId)?.id || "",
                 examId: exam.id,
                 remark: remarks[Math.floor(Math.random() * remarks.length)],
-                principalName: "Dr. Joseph Mwangi",
+                principalName: "",
                 updatedAt: now,
               });
               principalRemarkCounter++;
@@ -462,13 +462,13 @@ export default function Reports() {
             <div className="px-6 py-5 text-white">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-16 w-16 rounded bg-white/20 flex items-center justify-center text-white font-bold text-xs border border-white/30 overflow-hidden">
+                  <div className="h-24 w-24 rounded bg-white/20 flex items-center justify-center text-white font-bold text-xs border border-white/30 overflow-hidden">
                   <img src="/school_logo.jpg" alt="School logo" className="h-full w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 </div>
                   <div>
                     <div className="font-bold text-xl md:text-2xl leading-tight">{state.settings.schoolName || "HIGHWAY SECONDARY SCHOOL"}</div>
                     <div className="text-sm text-white/90 leading-tight mt-1">{state.settings.address || "P.O BOX 1234, NAIROBI"}</div>
-                    <div className="text-sm text-white/90 mt-1">PHONE: +254 700 000 000 | EMAIL: info@school.ac.ke</div>
+                    <div className="text-sm text-white/90 mt-1">PHONE: 0704921291 | EMAIL: info@drumvalesecondary.sc.ke</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -568,7 +568,6 @@ export default function Reports() {
                   <th className="text-center p-1.5 border border-black/30 w-12">GRADE</th>
                   <th className="text-center p-1.5 border border-black/30 w-16">RANK</th>
                   <th className="text-left p-1.5 border border-black/30">COMMENT</th>
-                  <th className="text-left p-1.5 border border-black/30 w-28">TEACHER</th>
                 </tr>
               </thead>
               <tbody>
@@ -608,11 +607,10 @@ export default function Reports() {
                           if (sh) sh.teacherComment = e.target.value;
                         })}/>
                     </td>
-                    <td className="p-1.5 border text-muted-foreground">{r.teacherName}</td>
                   </tr>
                 ))}
                 {filledRows.length === 0 && (
-                  <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">No marks entered yet for this exam.</td></tr>
+                  <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">No marks entered yet for this exam.</td></tr>
                 )}
               </tbody>
             </table>
@@ -625,10 +623,6 @@ export default function Reports() {
               <Textarea className="text-xs min-h-[50px] print:min-h-[40px] resize-none" defaultValue={classRemark?.remark || state.settings.classTeacherRemarkTemplate}
                 disabled={!canComment}
                 onBlur={updateClassRemark}/>
-              <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
-                <span>Signed: {classTeacher?.name || "—"}</span>
-                <span>Date: {new Date().toLocaleDateString()}</span>
-              </div>
               <div className="mt-4 border-t pt-1 text-[10px] text-muted-foreground">
                 <div className="font-semibold">Class Teacher Signature</div>
                 <div className="h-8"></div>
@@ -639,10 +633,6 @@ export default function Reports() {
               <Textarea className="text-xs min-h-[50px] print:min-h-[40px] resize-none" defaultValue={principalRemark?.remark || state.settings.principalRemarkTemplate}
                 disabled={!isPrincipal}
                 onBlur={updatePrincipalRemark}/>
-              <div className="flex items-center justify-between mt-2 text-[10px] text-muted-foreground">
-                <span>Signed: {state.teachers.find(t => t.role === "principal")?.name || "Principal"}</span>
-                <span>Date: {new Date().toLocaleDateString()}</span>
-              </div>
               <div className="mt-4 border-t pt-1 text-[10px] text-muted-foreground flex items-start gap-2">
                 <div className="flex-1">
                   <div className="font-semibold">Chief Principal Signature</div>

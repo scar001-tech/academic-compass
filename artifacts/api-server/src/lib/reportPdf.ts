@@ -61,9 +61,6 @@ export function generateStudentReportPdf(student: any, exam: any, rows: any[], s
   doc.setFont("helvetica", "normal");
   doc.text("Class Teacher:", 14, y);
   doc.text(classTeacher?.name || "", 50, y);
-  y += 6;
-  doc.text("Principal:", 14, y);
-  doc.text(principalName || "", 50, y);
 
   return doc.output("blob");
 }
