@@ -453,6 +453,57 @@ export function statsForStudentExam(
   return { rows: validRows, mean: Math.round(mean * 10) / 10, totalPoints, overallGrade };
 }
 
+export interface TermSubjectStat {
+  subjectId: ID;
+  subject: string;
+  terms: Array<{
+    examId: ID;
+    term: number;
+    year: number;
+    score: number | null;
+    grade: string;
+    rank: number;
+    total: number;
+    deviation: number;
+  }>;
+}
+
+export function statsForStudentAllTerms(
+  state: AppState, studentId: ID,
+): { rows: TermSubjectStat[]; terms: Array<{ examId: ID; term: number; year: number; name: string }> } {
+  const student = state.students.find(s => s.id === studentId)!;
+  const curriculum = state.curricula.find(c => c.id === student.curriculumId)!;
+  const exams = state.exams
+    .filter(e => e.curriculumId === student.curriculumId && e.status !== "draft")
+    .sort((a, b) => a.year - b.year || a.term - b.term);
+  const subjects = state.subjects.filter(s => s.curriculumId === student.curriculumId);
+  const termList = exams.map(e => ({ examId: e.id, term: e.term, year: e.year, name: e.name }));
+  const rows: TermSubjectStat[] = [];
+
+  subjects.forEach((sub) => {
+    const terms: TermSubjectStat["terms"] = [];
+    exams.forEach((exam) => {
+      const sheet = state.sheets.find(s => s.examId === exam.id && s.subjectId === sub.id && s.streamId === student.streamId);
+      if (!sheet) return;
+      const entry = state.entries.find(e => e.sheetId === sheet.id && e.studentId === studentId);
+      const score = entry?.score ?? null;
+      const gb = gradeFor(score, curriculum.gradingScale);
+      const grade = entry?.overrideGrade || gb?.grade || "—";
+      const allEntries = state.entries.filter(e => e.sheetId === sheet.id && e.score != null);
+      const sorted = [...allEntries].sort((a, b) => (b.score! - a.score!));
+      const rank = score != null ? sorted.findIndex(e => e.studentId === studentId) + 1 : 0;
+      const mean = sorted.length ? sorted.reduce((a, b) => a + (b.score ?? 0), 0) / sorted.length : 0;
+      const deviation = score != null ? Math.round((score - mean) * 10) / 10 : 0;
+      terms.push({ examId: exam.id, term: exam.term, year: exam.year, score, grade, rank, total: sorted.length, deviation });
+    });
+    if (terms.length) {
+      rows.push({ subjectId: sub.id, subject: sub.name, terms });
+    }
+  });
+
+  return { rows, terms: termList };
+}
+
 export function identifyWeakAreas(
   state: AppState, studentId: ID,
 ): { subject: string; latestScore: number; trend: "up" | "down" | "flat"; reason: string }[] {

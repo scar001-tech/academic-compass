@@ -52,7 +52,27 @@ router.post("/send-report", authenticateJWT, requireRoles("admin", "principal", 
 
     const classTeacher = (schoolData.teachers || []).find((t: any) => t.id === (schoolData.classes || []).find((c: any) => c.id === student.classId)?.classTeacherId);
 
-    const pdfBlob = generateStudentReportPdf(student, exam, enrichedRows, stats, classTeacher, "Principal");
+    const termExams = (schoolData.exams || [])
+      .filter((e: any) => e.curriculumId === student.curriculumId && e.status !== "draft")
+      .sort((a: any, b: any) => a.year - b.year || a.term - b.term);
+
+    const termStats: any[] = [];
+    termExams.forEach((ex: any) => {
+      const sheet = (schoolData.sheets || []).find((s: any) => s.examId === ex.id && s.subjectId === enrichedRows[0]?.subjectId && s.streamId === student.streamId);
+      if (!sheet) return;
+      const entry = (schoolData.entries || []).find((e: any) => e.sheetId === sheet.id && e.studentId === student.id);
+      const allEntries = (schoolData.entries || []).filter((e: any) => e.sheetId === sheet.id && e.score != null);
+      const sorted = [...allEntries].sort((a: any, b: any) => (b.score - a.score));
+      const score = entry?.score ?? null;
+      const rank = score != null ? sorted.findIndex((e: any) => e.studentId === student.id) + 1 : 0;
+      const mean = sorted.length ? sorted.reduce((a: any, b: any) => a + (b.score ?? 0), 0) / sorted.length : 0;
+      const deviation = score != null ? Math.round((score - mean) * 10) / 10 : 0;
+      const curriculum = schoolData.curricula?.find((c: any) => c.id === student.curriculumId);
+      const grade = score != null ? (curriculum?.gradingScale?.find((g: any) => score >= g.min && score <= g.max)?.grade || "—") : "—";
+      termStats.push({ examId: ex.id, term: ex.term, year: ex.year, score, grade, rank, total: sorted.length, deviation });
+    });
+
+    const pdfBlob = generateStudentReportPdf(student, exam, enrichedRows, stats, classTeacher, "", termStats);
 
     const config = {
       provider: (process.env.SMS_PROVIDER || "custom") as SmsConfig["provider"],

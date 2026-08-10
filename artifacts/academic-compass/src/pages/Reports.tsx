@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
 } from "recharts";
-import { statsForStudentExam, type CurriculumId, type ID } from "@/lib/schoolData";
+import { statsForStudentExam, statsForStudentAllTerms, type CurriculumId, type ID } from "@/lib/schoolData";
 import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
@@ -90,6 +90,8 @@ export default function Reports() {
   const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
 
   const filledRows = useMemo(() => (latestStats?.rows ?? []).filter(r => r.score != null), [latestStats]);
+
+  const multiTermStats = student ? statsForStudentAllTerms(state, student.id) : null;
 
   const streamPosition = useMemo(() => {
     if (!student || !latestExam || !latestStats) return null;
@@ -374,6 +376,11 @@ export default function Reports() {
                     studentId: student.id,
                     examId: latestExam.id,
                     rows: filledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
+                    termStats: multiTermStats ? multiTermStats.rows.map(r => ({
+                      subjectId: r.subjectId,
+                      subject: r.subject,
+                      terms: r.terms.map(t => ({ examId: t.examId, term: t.term, year: t.year, score: t.score, grade: t.grade, rank: t.rank, total: t.total, deviation: t.deviation })),
+                    })) : [],
                   }),
                 });
                 const data = await res.json();
@@ -563,44 +570,51 @@ export default function Reports() {
                 <tr style={{ backgroundColor: BLUE }} className="text-white">
                   <th className="text-left p-1.5 border border-black/30 w-8">#</th>
                   <th className="text-left p-1.5 border border-black/30">SUBJECTS</th>
-                  <th className="text-center p-1.5 border border-black/30 w-14">MARKS</th>
-                  <th className="text-center p-1.5 border border-black/30 w-14">DEV.</th>
-                  <th className="text-center p-1.5 border border-black/30 w-12">GRADE</th>
-                  <th className="text-center p-1.5 border border-black/30 w-16">RANK</th>
+                  {multiTermStats?.terms.map((t) => (
+                    <th key={t.examId} className="text-center p-1.5 border border-black/30" colSpan={4}>
+                      T{t.term} {t.year}
+                    </th>
+                  ))}
                   <th className="text-left p-1.5 border border-black/30">COMMENT</th>
+                </tr>
+                <tr style={{ backgroundColor: BLUE }} className="text-white">
+                  <th className="p-1.5 border border-black/30"></th>
+                  <th className="p-1.5 border border-black/30"></th>
+                  {multiTermStats?.terms.map((t) => (
+                    <>
+                      <th key={`${t.examId}-marks`} className="text-center p-1.5 border border-black/30 w-14">MARKS</th>
+                      <th key={`${t.examId}-dev`} className="text-center p-1.5 border border-black/30 w-14">DEV.</th>
+                      <th key={`${t.examId}-grade`} className="text-center p-1.5 border border-black/30 w-12">GRADE</th>
+                      <th key={`${t.examId}-rank`} className="text-center p-1.5 border border-black/30 w-16">RANK</th>
+                    </>
+                  ))}
+                  <th className="p-1.5 border border-black/30"></th>
                 </tr>
               </thead>
               <tbody>
-                {filledRows.map((r, i) => (
+                {multiTermStats?.rows.map((r, i) => (
                   <tr key={r.subjectId} className="even:bg-gray-50">
                     <td className="p-1.5 border text-center">{i + 1}</td>
                     <td className="p-1.5 border font-medium">{r.subject}</td>
-                    <td className="p-1.5 border text-center">
-                      {canEditMarks ? (
-                        <input type="number" className="w-12 text-center border-b border-dashed outline-none"
-                          defaultValue={r.score ?? ""}
-                          onBlur={(e) => {
-                            const raw = e.target.value;
-                            if (raw === "") setMarkScore(r.entryId, null);
-                            else { const n = Number(raw); if (!isNaN(n)) setMarkScore(r.entryId, n); }
-                          }}
-                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}/>
-                      ) : (
-                        r.score ?? "—"
-                      )}
-                    </td>
-                    <td className={`p-1.5 border text-center ${r.deviation > 0 ? "text-green-700" : r.deviation < 0 ? "text-red-600" : ""}`}>
-                      {r.deviation > 0 ? "+" : ""}{r.deviation}
-                    </td>
-                    <td className="p-1.5 border text-center">
-                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
-                        style={{ backgroundColor: (r.grade === "A" || r.grade === "A-") ? "#d4edda" : r.grade === "B" ? "#d1ecf1" : r.grade === "C" ? "#fff3cd" : "#f8d7da", color: "#155724" }}>
-                        {r.grade}
-                      </span>
-                    </td>
-                    <td className="p-1.5 border text-center">{r.rank ? `${r.rank}/${r.total}` : "—"}</td>
+                    {r.terms.map((t) => (
+                      <>
+                        <td key={`${t.examId}-score`} className="p-1.5 border text-center">
+                          {t.score != null ? t.score : "—"}
+                        </td>
+                        <td key={`${t.examId}-dev`} className={`p-1.5 border text-center ${t.deviation > 0 ? "text-green-700" : t.deviation < 0 ? "text-red-600" : ""}`}>
+                          {t.deviation > 0 ? "+" : ""}{t.deviation}
+                        </td>
+                        <td key={`${t.examId}-grade`} className="p-1.5 border text-center">
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
+                            style={{ backgroundColor: (t.grade === "A" || t.grade === "A-") ? "#d4edda" : t.grade === "B" ? "#d1ecf1" : t.grade === "C" ? "#fff3cd" : "#f8d7da", color: "#155724" }}>
+                            {t.grade}
+                          </span>
+                        </td>
+                        <td key={`${t.examId}-rank`} className="p-1.5 border text-center">{t.rank ? `${t.rank}/${t.total}` : "—"}</td>
+                      </>
+                    ))}
                     <td className="p-1.5 border">
-                      <input className="w-full text-[11px] border-b border-dashed outline-none" defaultValue={r.teacherComment}
+                      <input className="w-full text-[11px] border-b border-dashed outline-none" defaultValue={filledRows.find(fr => fr.subjectId === r.subjectId)?.teacherComment || ""}
                         disabled={!canComment}
                         onBlur={(e) => update(s => {
                           const sh = s.sheets.find(x => x.examId === latestExam.id && x.subjectId === r.subjectId && x.streamId === student.streamId);
@@ -609,8 +623,8 @@ export default function Reports() {
                     </td>
                   </tr>
                 ))}
-                {filledRows.length === 0 && (
-                  <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">No marks entered yet for this exam.</td></tr>
+                {(!multiTermStats || multiTermStats.rows.length === 0) && (
+                  <tr><td colSpan={multiTermStats ? 5 + multiTermStats.terms.length * 4 : 5} className="p-4 text-center text-muted-foreground">No marks entered yet.</td></tr>
                 )}
               </tbody>
             </table>
