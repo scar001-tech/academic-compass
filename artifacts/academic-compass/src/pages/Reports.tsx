@@ -417,6 +417,18 @@ export default function Reports() {
             <SelectTrigger><SelectValue placeholder="Class / Grade"/></SelectTrigger>
             <SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
           </Select>
+          {(activeCurriculum === "844" || classes.some(c => c.name.includes("Form"))) && (
+            <div className="flex gap-1">
+              <Button size="sm" variant="outline" onClick={() => {
+                const form3 = classes.find(c => c.name.toLowerCase().includes("form 3") || c.name.toLowerCase().includes("form3"));
+                if (form3) { setClassId(form3.id); setStreamId(""); }
+              }}>Form 3</Button>
+              <Button size="sm" variant="outline" onClick={() => {
+                const form4 = classes.find(c => c.name.toLowerCase().includes("form 4") || c.name.toLowerCase().includes("form4"));
+                if (form4) { setClassId(form4.id); setStreamId(""); }
+              }}>Form 4</Button>
+            </div>
+          )}
           <Select value={streamId} onValueChange={(v) => { setStreamId(v); setStudentId(""); }} disabled={!classId}>
             <SelectTrigger><SelectValue placeholder="Stream"/></SelectTrigger>
             <SelectContent>{streams.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
