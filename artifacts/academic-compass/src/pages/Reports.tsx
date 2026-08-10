@@ -445,7 +445,17 @@ export default function Reports() {
         </div>
       </Card>
 
-      {student && latestExam && latestStats && (
+      {!student ? (
+        <Card className="p-8 text-center text-muted-foreground">
+          <div className="text-lg font-semibold mb-2">Select a student to view report card</div>
+          <div className="text-sm">Choose a curriculum, class/grade, and student from the filters above.</div>
+        </Card>
+      ) : !latestExam ? (
+        <Card className="p-8 text-center text-muted-foreground">
+          <div className="text-lg font-semibold mb-2">No exam data available</div>
+          <div className="text-sm">Create an exam and enter marks to generate report cards.</div>
+        </Card>
+      ) : (
         <div className="a4-sheet print-page">
           {/* Blue Header Bar */}
           <header className="rounded-t-lg overflow-hidden" style={{ backgroundColor: BLUE }}>
@@ -453,7 +463,7 @@ export default function Reports() {
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
                   <div className="h-16 w-16 rounded bg-white/20 flex items-center justify-center text-white font-bold text-xs border border-white/30 overflow-hidden">
-                  <img src="/school_logo.jpg" alt="School logo" className="h-full w-full object-contain" />
+                  <img src="/school_logo.jpg" alt="School logo" className="h-full w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 </div>
                   <div>
                     <div className="font-bold text-xl md:text-2xl leading-tight">{state.settings.schoolName || "HIGHWAY SECONDARY SCHOOL"}</div>
@@ -496,9 +506,9 @@ export default function Reports() {
 
           {/* Summary Boxes */}
           <section className="grid grid-cols-5 gap-2 py-2 border-b">
-            <SummaryBox label="Mean Grade" value={latestStats.overallGrade} />
+            <SummaryBox label="Mean Grade" value={(latestStats as any).overallGrade} />
             <SummaryBox label="Total Marks" value={filledRows.reduce((a, r) => a + (r.score ?? 0), 0).toFixed(0)} />
-            <SummaryBox label="Total Points" value={latestStats.totalPoints.toFixed(0)} />
+            <SummaryBox label="Total Points" value={(latestStats as any).totalPoints.toFixed(0)} />
             <SummaryBox label="Stream Pos." value={streamPosition ? `${streamPosition.rank} / ${streamPosition.total}` : "—"} />
             <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
           </section>
