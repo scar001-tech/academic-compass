@@ -286,7 +286,7 @@
   }
 
   .a4-sheet {
-    @apply mx-auto bg-white border border-gray-200 rounded-lg shadow-sm p-8 max-w-[820px] text-base;
+    @apply mx-auto bg-white border border-gray-200 rounded-lg shadow-sm p-8 max-w-[820px] w-full text-base;
   }
 
   @media print {
