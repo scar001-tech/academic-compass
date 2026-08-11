@@ -286,18 +286,17 @@
   }
 
   .a4-sheet {
-    @apply mx-auto bg-card border rounded-lg shadow-sm p-8 max-w-[820px] text-base;
+    @apply mx-auto bg-white border border-gray-200 rounded-lg shadow-sm p-8 max-w-[820px] text-base;
   }
 
   @media print {
     @page {
       size: A4;
-      margin: 8mm;
+      margin: 12mm;
     }
 
     html, body {
       background: #fff !important;
-      font-size: 12px;
     }
 
     .no-print {
@@ -501,52 +500,5 @@
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
-  }
-}
-
-/* ── Print scoping ──────────────────────────────────────────────── */
-@media print {
-  @page {
-    size: A4;
-    margin: 12mm;
-  }
-
-  html, body {
-    background: #fff !important;
-  }
-
-  .no-print {
-    display: none !important;
-  }
-
-  body * {
-    visibility: hidden;
-  }
-
-  .print-page,
-  .print-page * {
-    visibility: visible;
-  }
-
-  .print-page {
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    box-shadow: none !important;
-    border: none !important;
-    max-width: none;
-  }
-
-  .print-page table {
-    break-inside: avoid;
-  }
-
-  .print-page input,
-  .print-page textarea {
-    border: none !important;
-    background: transparent !important;
   }
 }
