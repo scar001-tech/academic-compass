@@ -34,6 +34,8 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
 
   const latestExam = useMemo(() => exams[0] ?? null, [exams]);
 
+  const isForm3or4 = cls?.name ? (cls.name.toLowerCase().includes("form 3") || cls.name.toLowerCase().includes("form 4")) : false;
+
   const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
   const filledRows = useMemo(() => (latestStats?.rows ?? []).filter(r => r.score != null), [latestStats]);
   const multiTermStats = student ? statsForStudentAllTerms(state, student.id) : null;
@@ -103,8 +105,6 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
   };
 
   if (!student || !latestExam) return null;
-
-  const isForm3or4 = cls?.name.toLowerCase().includes("form 3") || cls?.name.toLowerCase().includes("form 4");
 
   return (
     <div className="a4-sheet print-page">
