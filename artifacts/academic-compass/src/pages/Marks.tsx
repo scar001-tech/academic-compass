@@ -289,22 +289,100 @@ export default function Marks() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json<any>(sheet);
-      const rows = json
-        .map(r => {
-          const admissionNo = String(r["Adm. No."] || r["admissionNo"] || r["admission_no"] || "").trim();
-          const scoreRaw = r["score"] ?? r["Score"] ?? r["marks"] ?? r["Marks"];
-          const score = scoreRaw != null && scoreRaw !== "" ? Number(scoreRaw) : null;
-          if (!admissionNo || Number.isNaN(score)) return null;
-          const finalScore = typeof score === "number" && Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
-          return { admissionNo, score: finalScore };
-        })
-        .filter((r): r is { admissionNo: string; score: number | null } => r !== null);
+
+      const parseJson = (json: any[]): Array<{ admissionNo: string; score: number | null }> => {
+        return json
+          .map(r => {
+            const admissionNo = String(r["Adm. No."] || r["admissionNo"] || r["admission_no"] || "").trim();
+            const scoreRaw = r["score"] ?? r["Score"] ?? r["marks"] ?? r["Marks"];
+            const score = scoreRaw != null && scoreRaw !== "" ? Number(scoreRaw) : null;
+            if (!admissionNo || Number.isNaN(score)) return null;
+            const finalScore = typeof score === "number" && Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+            return { admissionNo, score: finalScore };
+          })
+          .filter((r): r is { admissionNo: string; score: number | null } => r !== null);
+      };
+
+      let rows = parseJson(XLSX.utils.sheet_to_json<any>(sheet));
+
+      if (rows.length === 0) {
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: "" });
+        const looksLikeSystemNoise = (value: string) => /environment_details|system_prompt|user_prompt|current_time|workspace_root|open_tabs|^\s*\{/.test(value.trim().toLowerCase());
+        const normalizeHeader = (h: string) => String(h).trim().toLowerCase().replace(/[\s.\-_\/()]/g, "");
+
+        const looksLikeAdmission = (value: string) => /^\d+[\/\-\s]?[a-z0-9]*$/i.test(value.trim()) || /^[a-z]{0,3}\/\d+\/\d+$/i.test(value.trim());
+        const looksLikeScore = (value: string) => {
+          const num = Number(value);
+          return !Number.isNaN(num) && Number.isFinite(num) && num >= 0 && num <= 100;
+        };
+
+        const findHeaderRow = (rows: any[][]): { rowIndex: number; headers: string[] } | null => {
+          for (let i = 0; i < Math.min(rows.length, 20); i++) {
+            const row = rows[i];
+            const values = row.map((v: any) => String(v).trim()).filter((v) => v && !looksLikeSystemNoise(v));
+            if (values.length < 2) continue;
+
+            const normalizedHeaders = values.map(normalizeHeader);
+            const hasAdm = normalizedHeaders.some(h => /^(adm|admission|studentno|regno|regnumber|admissionno|admissionnumber)/.test(h) || (h.includes("adm") && h.includes("no")));
+            const hasScore = normalizedHeaders.some(h => /^(score|mark|marksobtained|scorepct)/.test(h) || (h.includes("score") || h.includes("mark")));
+
+            if (hasAdm && hasScore) {
+              return { rowIndex: i, headers: row.map(String) };
+            }
+          }
+          return null;
+        };
+
+        const detected = findHeaderRow(rawRows);
+
+        if (!detected) {
+          const firstRow = (rawRows[0] || []).map((v: any) => String(v)).filter((v: any) => v && !looksLikeSystemNoise(v)).slice(0, 5).join(", ") || "(blank)";
+          toast.error(`No recognizable header row found. First row sample: ${firstRow}`);
+          return;
+        }
+
+        const dataRows = rawRows.slice(detected.rowIndex + 1).filter(r => r.some((v: any) => String(v).trim() !== ""));
+
+        if (!dataRows.length) {
+          toast.error("No data rows found below header row");
+          return;
+        }
+
+        const admissionHeader = detected.headers.find(h => {
+          const n = normalizeHeader(h);
+          return /^(adm|admission|studentno|regno|regnumber|admissionno|admissionnumber)/.test(n) || (n.includes("adm") && n.includes("no"));
+        });
+
+        const scoreHeader = detected.headers.find(h => {
+          const n = normalizeHeader(h);
+          return /^(score|mark|marksobtained|scorepct)/.test(n) || n.includes("score") || n.includes("mark");
+        });
+
+        if (!admissionHeader || !scoreHeader) {
+          toast.error(`Detected header row but missing required columns. Headers found: ${detected.headers.slice(0, 5).join(", ")}`);
+          return;
+        }
+
+        rows = dataRows
+          .map(r => {
+            const colIndex = (header: string) => detected.headers.indexOf(header);
+            const admCol = colIndex(admissionHeader);
+            const scoreCol = colIndex(scoreHeader);
+            const admissionNo = String(r[admCol] ?? "").trim();
+            const rawScore = r[scoreCol] != null ? String(r[scoreCol]).trim() : "";
+            const num = Number(rawScore);
+            if (!admissionNo || Number.isNaN(num)) return null;
+            const finalScore = Math.max(0, Math.min(100, num));
+            return { admissionNo, score: finalScore };
+          })
+          .filter((r): r is { admissionNo: string; score: number } => r !== null);
+      }
+
       if (rows.length === 0) {
         toast.error("No valid rows found in file");
         return;
       }
-      setImportText(rows.map(r => `${r.admissionNo}, ${r.score ?? ""}`).join("\n"));
+      setImportText(rows.map(r => `${r.admissionNo}, ${r.score}`).join("\n"));
       setImportOpen(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to read file";
