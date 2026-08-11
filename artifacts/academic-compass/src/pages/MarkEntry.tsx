@@ -374,6 +374,85 @@ export default function MarkEntry() {
     }
   };
 
+  const confirmManualImport = () => {
+    if (!subjectId || !examId || !importText.trim()) return;
+
+    const rows = parseImportCsv(importText);
+    if (rows.length === 0) {
+      toast.error("No valid rows found");
+      return;
+    }
+
+    const allStudents = subjectStreamGroups.flatMap(g => g.students);
+    const normalizeAdm = (value: string) => value.trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
+
+    const systemByNormalized = new Map<string, typeof state.students[number]>();
+    allStudents.forEach(s => {
+      const n = normalizeAdm(s.admissionNo);
+      if (!systemByNormalized.has(n)) systemByNormalized.set(n, s);
+    });
+
+    const updates: { studentId: string; score: number | null; sheetId: string }[] = [];
+
+    for (const row of rows) {
+      const rawAdm = String(row.admissionNo).trim();
+      if (!rawAdm) continue;
+
+      let stu: typeof state.students[number] | undefined;
+
+      const manualKey = rawAdm;
+      if (manualMap[manualKey]) {
+        stu = allStudents.find(s => s.id === manualMap[manualKey]);
+      }
+
+      if (!stu) {
+        const normalized = normalizeAdm(rawAdm);
+        stu = systemByNormalized.get(normalized);
+      }
+
+      if (!stu) continue;
+
+      const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
+      if (!stuSheet) continue;
+      updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
+    }
+
+    if (updates.length === 0) {
+      toast.error("No valid matches found after review");
+      return;
+    }
+
+    for (const u of updates) {
+      update(s => {
+        let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
+        if (!e) {
+          e = {
+            id: `e_${u.sheetId}_${u.studentId}_${Date.now()}`,
+            sheetId: u.sheetId,
+            studentId: u.studentId,
+            score: u.score,
+            updatedAt: Date.now(),
+            updatedBy: s.deviceName,
+            pending: true,
+          };
+          s.entries.push(e);
+        } else {
+          e.score = u.score;
+          e.updatedAt = Date.now();
+          e.updatedBy = s.deviceName;
+          e.pending = true;
+        }
+        if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
+      });
+    }
+
+    toast.success(`Imported ${updates.length} marks`);
+    setImportOpen(false);
+    setImportText("");
+    setUnmatched([]);
+    setManualMap({});
+  };
+
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -659,31 +738,89 @@ export default function MarkEntry() {
               Expected format: <code>admissionNo, score</code>.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Upload Excel/CSV</Label>
-              <Input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={handleFileImport}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="import-text">Or paste CSV</Label>
-              <textarea
-                id="import-text"
-                className="w-full h-40 border rounded-md p-2 text-sm font-mono"
-                placeholder="2244, 78&#10;CBC/101/26, 85"
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-              />
-            </div>
-            <Button className="w-full" onClick={handleImportMarks} disabled={importBusy || !importText.trim() || !subjectId || !examId}>
-              {importBusy ? "Importing..." : "Import Marks"}
-            </Button>
-          </div>
+           <div className="space-y-4">
+             <div>
+               <Label>Upload Excel/CSV</Label>
+               <Input
+                 ref={fileInputRef}
+                 type="file"
+                 accept=".csv,.xlsx,.xls"
+                 onChange={handleFileImport}
+                 className="mt-1"
+               />
+             </div>
+             <div>
+               <Label htmlFor="import-text">Or paste CSV</Label>
+               <textarea
+                 id="import-text"
+                 className="w-full h-40 border rounded-md p-2 text-sm font-mono"
+                 placeholder="2244, 78&#10;CBC/101/26, 85"
+                 value={importText}
+                 onChange={(e) => setImportText(e.target.value)}
+               />
+             </div>
+
+             {unmatched.length > 0 && (
+               <div className="space-y-3 rounded-md border border-warning/40 bg-warning/5 p-3">
+                 <div className="text-sm font-medium text-warning">
+                   {unmatched.length} row(s) could not be matched automatically. Review and map them below.
+                 </div>
+                 {unmatched.map((row, idx) => {
+                   const key = `${idx}_${row.rawAdm}`;
+                   const selectedId = manualMap[key];
+                   const allOptions = subjectStreamGroups.flatMap(g => g.students);
+                   const suggestions = row.suggestedStudents && row.suggestedStudents.length > 0
+                     ? row.suggestedStudents
+                     : allOptions;
+
+                   return (
+                     <div key={key} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                       <div className="md:col-span-3 text-xs font-mono break-all">
+                         <div className="text-[10px] uppercase text-muted-foreground">Admission</div>
+                         {row.rawAdm}
+                       </div>
+                       <div className="md:col-span-2 text-xs">
+                         <div className="text-[10px] uppercase text-muted-foreground">Score</div>
+                         {row.score ?? "—"}
+                       </div>
+                       <div className="md:col-span-5">
+                         <div className="text-[10px] uppercase text-muted-foreground mb-1">Match student</div>
+                         <Select value={selectedId} onValueChange={(v) => setManualMap(prev => ({ ...prev, [key]: v }))}>
+                           <SelectTrigger className="h-8 text-xs">
+                             <SelectValue placeholder="Select student" />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="">-- skip --</SelectItem>
+                             {suggestions.map(s => (
+                               <SelectItem key={s.id} value={s.id}>
+                                 {s.admissionNo} · {s.name}
+                               </SelectItem>
+                             ))}
+                             {allOptions.filter(s => !suggestions.includes(s)).map(s => (
+                               <SelectItem key={`other_${s.id}`} value={s.id}>
+                                 {s.admissionNo} · {s.name}
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div className="md:col-span-2 text-xs text-muted-foreground">
+                         {selectedId ? (
+                           <span className="text-success">Matched</span>
+                         ) : (
+                           <span className="text-destructive">Unmatched</span>
+                         )}
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+             )}
+
+             <Button className="w-full" onClick={unmatched.length > 0 ? confirmManualImport : handleImportMarks} disabled={importBusy || !importText.trim() || !subjectId || !examId}>
+               {importBusy ? "Importing..." : unmatched.length > 0 ? "Confirm Import" : "Import Marks"}
+             </Button>
+           </div>
         </DialogContent>
       </Dialog>
     </div>
