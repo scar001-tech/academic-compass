@@ -38,17 +38,49 @@ router.post("/marks", authenticateJWT, requireRoles("admin", "principal", "senio
     if (!sheet) return res.status(404).json({ message: "Mark sheet not found" });
 
     const allStudents = schoolData.students || [];
-    const studentsByAdm = new Map(allStudents.map((s: any) => [s.admissionNo, s]));
-    const studentsById = new Map(allStudents.map((s: any) => [s.id, s]));
+    const studentsByAdm = new Map(allStudents.map((s: any) => [String(s.admissionNo).trim().toLowerCase(), s]));
+    const studentsById = new Map(allStudents.map((s: any) => [String(s.id).trim().toLowerCase(), s]));
+    const studentsByName = new Map(allStudents.map((s: any) => [String(s.name).trim().toLowerCase(), s]));
 
-    const entriesToUpsert: any[] = [];
-    const errors: any[] = [];
+    const normalizeAdmission = (value: string) => String(value).trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
+
+    const matchStudent = (admissionNo: string, rawRow: any): any => {
+      const exactAdm = String(admissionNo).trim().toLowerCase();
+      const normalizedAdm = normalizeAdmission(admissionNo);
+
+      let student = studentsByAdm.get(exactAdm) || studentsById.get(exactAdm);
+      if (student) return student;
+
+      for (const [key, s] of studentsByAdm.entries()) {
+        if (normalizeAdmission(key) === normalizedAdm) return s;
+      }
+
+      const numericPart = admissionNo.replace(/[^0-9]/g, "").trim();
+      if (numericPart) {
+        for (const [key, s] of studentsByAdm.entries()) {
+          const keyNumeric = key.replace(/[^0-9]/g, "").trim();
+          if (keyNumeric && keyNumeric === numericPart) return s;
+        }
+        for (const [key, s] of studentsById.entries()) {
+          const keyNumeric = key.replace(/[^0-9]/g, "").trim();
+          if (keyNumeric && keyNumeric === numericPart) return s;
+        }
+      }
+
+      if (rawRow && rawRow.name) {
+        const nameKey = String(rawRow.name).trim().toLowerCase();
+        student = studentsByName.get(nameKey);
+        if (student) return student;
+      }
+
+      return null;
+    };
 
     for (const r of rows) {
       const admissionNo = String(r.admissionNo || r.admission_no || "").trim();
       const rawScore = r.score != null && r.score !== "" ? Number(r.score) : null;
       if (!admissionNo) continue;
-      const student = studentsByAdm.get(admissionNo) || studentsById.get(admissionNo) as any;
+      const student = matchStudent(admissionNo, r);
       if (!student) {
         errors.push({ admissionNo, error: "Student not found" });
         continue;

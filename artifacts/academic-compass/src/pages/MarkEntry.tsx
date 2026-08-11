@@ -50,6 +50,8 @@ export default function MarkEntry() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
+  const [unmatched, setUnmatched] = useState<Array<{ rawAdm: string; score: number | null; suggestedStudents: typeof state.students }>>([]);
+  const [manualMap, setManualMap] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const classes  = state.classes.filter(c => c.curriculumId === activeCurriculum);
@@ -263,22 +265,24 @@ export default function MarkEntry() {
 
       const allStudents = subjectStreamGroups.flatMap(g => g.students);
 
-      const normalizeAdm = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+      const normalizeAdm = (value: string) => value.trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
 
-      const systemByName = new Map<string, typeof state.students[number]>();
+      const systemByNormalized = new Map<string, typeof state.students[number]>();
+      const systemByLower = new Map<string, typeof state.students[number]>();
+      const systemById = new Map<string, typeof state.students[number]>();
+
       allStudents.forEach(s => {
         const n = normalizeAdm(s.admissionNo);
-        if (!systemByName.has(n)) systemByName.set(n, s);
+        if (!systemByNormalized.has(n)) systemByNormalized.set(n, s);
+        const l = s.admissionNo.trim().toLowerCase();
+        if (!systemByLower.has(l)) systemByLower.set(l, s);
+        const id = String(s.id).trim().toLowerCase();
+        if (!systemById.has(id)) systemById.set(id, s);
       });
 
-      const systemByLower = new Map<string, typeof state.students[number]>();
-      allStudents.forEach(s => {
-        const n = s.admissionNo.trim().toLowerCase();
-        if (!systemByLower.has(n)) systemByLower.set(n, s);
-      });
-
-      let imported = 0;
+      const unmatchedRows: Array<{ rawAdm: string; score: number | null; suggestedStudents: typeof state.students }> = [];
       const updates: { studentId: string; score: number | null; sheetId: string }[] = [];
+
       for (const row of rows) {
         const rawAdm = String(row.admissionNo).trim();
         if (!rawAdm) continue;
@@ -286,24 +290,53 @@ export default function MarkEntry() {
         const normalized = normalizeAdm(rawAdm);
         const lowered = rawAdm.toLowerCase();
 
-        let stu = systemByName.get(normalized) || systemByLower.get(lowered) || null;
+        let stu = systemByNormalized.get(normalized) || systemByLower.get(lowered) || systemById.get(lowered);
 
         if (!stu) {
-          const exact = allStudents.find(s => s.admissionNo === rawAdm);
-          if (exact) stu = exact;
+          const numeric = rawAdm.replace(/[^0-9]/g, "").trim();
+          if (numeric) {
+            for (const [key, s] of systemByNormalized.entries()) {
+              const keyNumeric = key.replace(/[^0-9]/g, "").trim();
+              if (keyNumeric && keyNumeric === numeric) { stu = s; break; }
+            }
+            if (!stu) {
+              for (const [key, s] of systemById.entries()) {
+                const keyNumeric = key.replace(/[^0-9]/g, "").trim();
+                if (keyNumeric && keyNumeric === numeric) { stu = s; break; }
+              }
+            }
+          }
         }
 
-        if (!stu) continue;
+        if (!stu) {
+          const suggestions = allStudents.filter(s => {
+            const sysNumeric = s.admissionNo.replace(/[^0-9]/g, "").trim();
+            const rowNumeric = rawAdm.replace(/[^0-9]/g, "").trim();
+            return sysNumeric && rowNumeric && sysNumeric === rowNumeric;
+          });
+          unmatchedRows.push({ rawAdm, score: row.score, suggestedStudents: suggestions });
+          continue;
+        }
 
         const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
         if (!stuSheet) continue;
         updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
       }
 
-      if (updates.length === 0) {
-        toast.error("No matching students found for the provided admission numbers");
+      if (unmatchedRows.length > 0) {
+        setUnmatched(unmatchedRows);
+        setImportOpen(true);
+        toast.warning(`${unmatchedRows.length} row(s) could not be matched automatically. Please review below.`);
+        setImportBusy(false);
         return;
       }
+
+      if (updates.length === 0) {
+        toast.error("No matching students found for the provided admission numbers");
+        setImportBusy(false);
+        return;
+      }
+
       for (const u of updates) {
         update(s => {
           let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
@@ -326,12 +359,13 @@ export default function MarkEntry() {
           }
           if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
         });
-        imported++;
       }
-      toast.success(`Imported ${imported} mark${imported > 1 ? "s" : ""}`);
+
+      toast.success(`Updated ${updates.length} marks locally`);
       setImportOpen(false);
       setImportText("");
-      if (stateRef.current.online) syncNow();
+      setUnmatched([]);
+      setManualMap({});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Import failed";
       toast.error(msg);
