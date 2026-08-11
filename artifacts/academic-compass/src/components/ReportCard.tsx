@@ -34,8 +34,6 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
 
   const latestExam = useMemo(() => exams[0] ?? null, [exams]);
 
-  const isForm3or4 = cls?.name ? (cls.name.toLowerCase().includes("form 3") || cls.name.toLowerCase().includes("form 4")) : false;
-
   const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
   const filledRows = useMemo(() => (latestStats?.rows ?? []).filter(r => r.score != null), [latestStats]);
   const multiTermStats = student ? statsForStudentAllTerms(state, student.id) : null;
@@ -161,7 +159,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
         <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
       </section>
 
-      {isForm3or4 && (
+      {multiTermStats && (
         <section className="py-2 border-b overflow-x-auto">
           <table className="w-full text-[11px] border border-black" style={{ minWidth: 720 }}>
             <thead>

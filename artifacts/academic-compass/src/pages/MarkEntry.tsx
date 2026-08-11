@@ -67,21 +67,25 @@ export default function MarkEntry() {
     if (!subjectId || !examId) return [];
     const groups: Array<{ streamId: string; streamName: string; students: typeof state.students }> = [];
 
-    targetClasses.forEach(cls => {
-      const classStreams = state.streams.filter(st => st.classId === cls.id);
-      classStreams.forEach(stream => {
-        const classStudents = state.students.filter(s => s.classId === cls.id && s.streamId === stream.id);
-        if (classStudents.length === 0) return;
-        groups.push({
-          streamId: stream.id,
-          streamName: `${cls.name} · ${stream.name}`,
-          students: classStudents,
-        });
+    const classFilter = targetClasses.map(c => c.id);
+    const classStreams = state.streams.filter(st => classFilter.includes(st.classId));
+
+    const streamsToShow = streamId
+      ? classStreams.filter(st => st.id === streamId)
+      : classStreams;
+
+    streamsToShow.forEach(stream => {
+      const classStudents = state.students.filter(s => classFilter.includes(s.classId) && s.streamId === stream.id);
+      if (classStudents.length === 0) return;
+      groups.push({
+        streamId: stream.id,
+        streamName: `${state.classes.find(c => c.id === stream.classId)?.name || stream.classId} · ${stream.name}`,
+        students: classStudents,
       });
     });
 
     return groups;
-  }, [state.students, state.streams, targetClasses, subjectId, examId]);
+  }, [state.students, state.streams, state.classes, targetClasses, subjectId, examId, streamId]);
 
   const totalStudents = useMemo(() => subjectStreamGroups.reduce((sum, g) => sum + g.students.length, 0), [subjectStreamGroups]);
 
