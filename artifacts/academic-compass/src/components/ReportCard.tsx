@@ -190,7 +190,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
               </tr>
             </thead>
             <tbody>
-              {multiTermStats?.rows.map((r, i) => (
+              {multiTermStats?.rows.filter(r => r.terms.some(t => t.score != null)).map((r, i) => (
                 <tr key={r.subjectId} className="even:bg-gray-50">
                   <td className="p-1.5 border text-center">{i + 1}</td>
                   <td className="p-1.5 border font-medium">{r.subject}</td>
@@ -221,7 +221,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
                   </td>
                 </tr>
               ))}
-              {(!multiTermStats || multiTermStats.rows.length === 0) && (
+              {(multiTermStats?.rows.filter(r => r.terms.some(t => t.score != null)).length ?? 0) === 0 && (
                 <tr><td colSpan={multiTermStats ? 5 + multiTermStats.terms.length * 4 : 5} className="p-4 text-center text-muted-foreground">No marks entered yet.</td></tr>
               )}
             </tbody>
