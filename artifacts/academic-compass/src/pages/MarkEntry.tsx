@@ -366,6 +366,14 @@ export default function MarkEntry() {
       setImportText("");
       setUnmatched([]);
       setManualMap({});
+
+      if (stateRef.current.online) {
+        syncNow().catch(() => {
+          toast.info("Marks saved locally. They will sync when connection improves.");
+        });
+      } else {
+        toast.info("Marks saved locally. They will sync when you're back online.");
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Import failed";
       toast.error(msg);
@@ -451,6 +459,14 @@ export default function MarkEntry() {
     setImportText("");
     setUnmatched([]);
     setManualMap({});
+
+    if (stateRef.current.online) {
+      syncNow().catch(() => {
+        toast.info("Marks saved locally. They will sync when connection improves.");
+      });
+    } else {
+      toast.info("Marks saved locally. They will sync when you're back online.");
+    }
   };
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
