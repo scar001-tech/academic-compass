@@ -18,7 +18,7 @@ interface SchoolCtx {
   setActiveCurriculum: (c: CurriculumId) => void;
   update: (updater: (s: AppState) => void) => void;
   setOnline: (v: boolean) => void;
-  syncNow: () => Promise<void>;
+  syncNow: () => Promise<{ pushed: number; conflicted: number } | null>;
   syncing: boolean;
   resetAll: () => void;
   setMarkScore: (entryId: ID, score: number | null) => void;
@@ -67,9 +67,9 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   // setOnline kept for API compatibility but does nothing UI-side
   const setOnline = useCallback((_v: boolean) => {}, []);
 
-  const syncNow = useCallback(async () => {
-    if (syncing) return;
-    if (!localStorage.getItem("ac_token")) return;
+  const syncNow = useCallback(async (): Promise<{ pushed: number; conflicted: number } | null> => {
+    if (syncing) return null;
+    if (!localStorage.getItem("ac_token")) return null;
     setSyncing(true);
     try {
       const s = stateRef.current;
@@ -153,7 +153,6 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
 
       update((n) => {
         const localById = new Map(n.entries.map(e => [e.id, e]));
-        const remoteById = new Map<RemoteMarkEntry["id"], RemoteMarkEntry>((remoteEntries as RemoteMarkEntry[]).map(r => [r.id, r]));
         const mergedEntries = new Map<string, any>(localById);
 
         for (const r of remoteEntries as RemoteMarkEntry[]) {
@@ -259,11 +258,13 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      if (pushed)     toast.success(`Synced ${pushed} change${pushed > 1 ? "s" : ""}`);
+      if (pushed) toast.success(`Synced ${pushed} change${pushed > 1 ? "s" : ""}`);
       if (conflicted) toast.warning(`${conflicted} conflict${conflicted > 1 ? "s" : ""} to resolve`);
+      return { pushed, conflicted };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error("Sync failed: " + msg);
+      return null;
     } finally {
       setSyncing(false);
     }

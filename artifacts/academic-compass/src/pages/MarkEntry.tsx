@@ -367,10 +367,18 @@ export default function MarkEntry() {
       setUnmatched([]);
       setManualMap({});
 
-      if (stateRef.current.online) {
-        syncNow().catch(() => {
-          toast.info("Marks saved locally. They will sync when connection improves.");
-        });
+      const token = localStorage.getItem("ac_token");
+      if (!token) {
+        toast.info("Marks saved locally. Sign in to sync them to the cloud.");
+      } else if (stateRef.current.online) {
+        const result = await syncNow();
+        if (result && result.pushed > 0) {
+          toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);
+        } else if (result === null) {
+          toast.info("Marks saved locally. Sync skipped.");
+        } else {
+          toast.info("Marks saved locally. They will sync later.");
+        }
       } else {
         toast.info("Marks saved locally. They will sync when you're back online.");
       }
@@ -382,7 +390,7 @@ export default function MarkEntry() {
     }
   };
 
-  const confirmManualImport = () => {
+  const confirmManualImport = async () => {
     if (!subjectId || !examId || !importText.trim()) return;
 
     const rows = parseImportCsv(importText);
@@ -460,10 +468,18 @@ export default function MarkEntry() {
     setUnmatched([]);
     setManualMap({});
 
-    if (stateRef.current.online) {
-      syncNow().catch(() => {
-        toast.info("Marks saved locally. They will sync when connection improves.");
-      });
+    const token = localStorage.getItem("ac_token");
+    if (!token) {
+      toast.info("Marks saved locally. Sign in to sync them to the cloud.");
+    } else if (stateRef.current.online) {
+      const result = await syncNow();
+      if (result && result.pushed > 0) {
+        toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);
+      } else if (result === null) {
+        toast.info("Marks saved locally. Sync skipped.");
+      } else {
+        toast.info("Marks saved locally. They will sync later.");
+      }
     } else {
       toast.info("Marks saved locally. They will sync when you're back online.");
     }
