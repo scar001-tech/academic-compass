@@ -318,7 +318,7 @@ export default function MarkEntry() {
           continue;
         }
 
-        const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
+        const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId) || ensureSheetFor(stu.streamId, stu.classId);
         if (!stuSheet) continue;
         updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
       }
@@ -412,7 +412,7 @@ export default function MarkEntry() {
 
       if (!stu) continue;
 
-      const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId);
+      const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId) || ensureSheetFor(stu.streamId, stu.classId);
       if (!stuSheet) continue;
       updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
     }
