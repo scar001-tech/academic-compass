@@ -227,8 +227,8 @@ export default function Marks() {
     const lines = raw.split(/\r?\n/).filter(line => line.trim());
     const rows: Array<{ admissionNo: string; score: number | null }> = [];
     for (const line of lines) {
-      const parts = line.split(",").map(s => s.trim()).filter(Boolean);
-      if (parts.length < 2) continue;
+      const parts = line.split(",").map(s => s.trim());
+      if (parts.length < 2 || !parts[0]) continue;
       const admissionNo = parts[0];
       const scoreRaw = parts[1];
       const score = scoreRaw === "" || scoreRaw === "-" ? null : Number(scoreRaw);
@@ -336,8 +336,69 @@ export default function Marks() {
         const detected = findHeaderRow(rawRows);
 
         if (!detected) {
-          const firstRow = (rawRows[0] || []).map((v: any) => String(v)).filter((v: any) => v && !looksLikeSystemNoise(v)).slice(0, 5).join(", ") || "(blank)";
-          toast.error(`No recognizable header row found. First row sample: ${firstRow}`);
+          const looksLikeAdmission = (value: string) => /^\d+[\/\-\s]?[a-z0-9]*$/i.test(value.trim()) || /^[a-z]{0,3}\/\d+\/\d+$/i.test(value.trim());
+          const looksLikeScore = (value: string) => {
+            const num = Number(value);
+            return !Number.isNaN(num) && Number.isFinite(num) && num >= 0 && num <= 100;
+          };
+
+          const inferDataColumns = (rows: any[][]): { admissionCol: number; scoreCol: number } | null => {
+            if (!rows.length) return null;
+            const firstRow = rows[0].map((v: any) => String(v).trim()).filter((v: any) => v && !looksLikeSystemNoise(v));
+            if (firstRow.length < 2) return null;
+
+            const admissionCandidates: number[] = [];
+            const scoreCandidates: number[] = [];
+
+            firstRow.forEach((val, idx) => {
+              if (looksLikeAdmission(val)) admissionCandidates.push(idx);
+              if (looksLikeScore(val)) scoreCandidates.push(idx);
+            });
+
+            if (admissionCandidates.length === 0) {
+              const firstNumeric = firstRow.findIndex(v => looksLikeScore(v) || looksLikeAdmission(v));
+              if (firstNumeric >= 0) admissionCandidates.push(firstNumeric);
+            }
+
+            if (admissionCandidates.length > 0 && scoreCandidates.length >= 1) {
+              const admissionCol = admissionCandidates[0];
+              const scoreCol = scoreCandidates.find(c => c !== admissionCol) ?? scoreCandidates[0];
+              if (admissionCol !== scoreCol) return { admissionCol, scoreCol };
+            }
+
+            if (admissionCandidates.length > 0 && firstRow.length >= 2) {
+              const admissionCol = admissionCandidates[0];
+              const fallbackScoreCol = firstRow.findIndex((_, idx) => idx !== admissionCol);
+              if (fallbackScoreCol >= 0 && fallbackScoreCol !== admissionCol) return { admissionCol, scoreCol: fallbackScoreCol };
+            }
+
+            return null;
+          };
+
+          const inferred = inferDataColumns(rawRows);
+
+          if (inferred) {
+            rows = rawRows
+              .filter(r => r.some((v: any) => String(v).trim() !== ""))
+              .map(r => {
+                const admissionNo = String(r[inferred.admissionCol] ?? "").trim();
+                const rawScore = r[inferred.scoreCol] != null ? String(r[inferred.scoreCol]).trim() : "";
+                const num = Number(rawScore);
+                if (!admissionNo) return null;
+                const finalScore = (!rawScore || Number.isNaN(num)) ? null : Math.max(0, Math.min(100, num));
+                return { admissionNo, score: finalScore };
+              })
+              .filter((r): r is { admissionNo: string; score: number | null } => r !== null);
+          }
+
+          if (rows.length === 0) {
+            const firstRow = (rawRows[0] || []).map((v: any) => String(v)).filter((v: any) => v && !looksLikeSystemNoise(v)).slice(0, 5).join(", ") || "(blank)";
+            toast.error(`No recognizable header row found. First row sample: ${firstRow}`);
+            return;
+          }
+
+          setImportText(rows.map(r => `${r.admissionNo}, ${r.score ?? ""}`).join("\n"));
+          setImportOpen(true);
           return;
         }
 
@@ -371,18 +432,18 @@ export default function Marks() {
             const admissionNo = String(r[admCol] ?? "").trim();
             const rawScore = r[scoreCol] != null ? String(r[scoreCol]).trim() : "";
             const num = Number(rawScore);
-            if (!admissionNo || Number.isNaN(num)) return null;
-            const finalScore = Math.max(0, Math.min(100, num));
+            if (!admissionNo) return null;
+            const finalScore = (!rawScore || Number.isNaN(num)) ? null : Math.max(0, Math.min(100, num));
             return { admissionNo, score: finalScore };
           })
-          .filter((r): r is { admissionNo: string; score: number } => r !== null);
+          .filter((r): r is { admissionNo: string; score: number | null } => r !== null);
       }
 
       if (rows.length === 0) {
         toast.error("No valid rows found in file");
         return;
       }
-      setImportText(rows.map(r => `${r.admissionNo}, ${r.score}`).join("\n"));
+      setImportText(rows.map(r => `${r.admissionNo}, ${r.score ?? ""}`).join("\n"));
       setImportOpen(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to read file";
