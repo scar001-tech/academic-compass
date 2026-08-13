@@ -194,6 +194,7 @@ export default function MarkEntry() {
             e.pending = true;
           }
         });
+        saveState(stateRef.current);
       }
       return;
     }
@@ -231,7 +232,7 @@ export default function MarkEntry() {
       if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
     });
 
-    saveState(state);
+    saveState(stateRef.current);
     if (stateRef.current.online) {
       syncNow().catch(() => {});
     }
@@ -364,7 +365,7 @@ export default function MarkEntry() {
         }
       });
 
-      saveState(state);
+      saveState(stateRef.current);
       toast.success(`Updated ${updates.length} marks locally`);
       setImportOpen(false);
       setImportText("");
@@ -466,7 +467,7 @@ export default function MarkEntry() {
         }
       });
 
-      saveState(state);
+      saveState(stateRef.current);
       toast.success(`Imported ${updates.length} marks`);
     setImportOpen(false);
     setImportText("");
