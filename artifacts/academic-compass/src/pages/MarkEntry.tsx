@@ -98,7 +98,7 @@ export default function MarkEntry() {
 
   const ensureSheetFor = (streamId: string, classIdHint?: string) => {
     if (!subjectId || !examId || !streamId) return null;
-    const existing = state.sheets.find(s => s.streamId === streamId && s.subjectId === subjectId && s.examId === examId);
+    const existing = stateRef.current.sheets.find(s => s.streamId === streamId && s.subjectId === subjectId && s.examId === examId);
     if (existing) return existing;
     const newSheet = {
       id: `${activeCurriculum}_${classIdHint || classId}_${streamId}_${subjectId}_${examId}` as ID,
@@ -397,51 +397,52 @@ export default function MarkEntry() {
 
   const confirmManualImport = async () => {
     if (!subjectId || !examId || !importText.trim()) return;
-
-    const rows = parseImportCsv(importText);
-    if (rows.length === 0) {
-      toast.error("No valid rows found");
-      return;
-    }
-
-    const allStudents = subjectStreamGroups.flatMap(g => g.students);
-    const normalizeAdm = (value: string) => value.trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
-
-    const systemByNormalized = new Map<string, typeof state.students[number]>();
-    allStudents.forEach(s => {
-      const n = normalizeAdm(s.admissionNo);
-      if (!systemByNormalized.has(n)) systemByNormalized.set(n, s);
-    });
-
-    const updates: { studentId: string; score: number | null; sheetId: string }[] = [];
-
-    for (const row of rows) {
-      const rawAdm = String(row.admissionNo).trim();
-      if (!rawAdm) continue;
-
-      let stu: typeof state.students[number] | undefined;
-
-      const manualKey = rawAdm;
-      if (manualMap[manualKey]) {
-        stu = allStudents.find(s => s.id === manualMap[manualKey]);
+    setImportBusy(true);
+    try {
+      const rows = parseImportCsv(importText);
+      if (rows.length === 0) {
+        toast.error("No valid rows found");
+        return;
       }
 
-      if (!stu) {
-        const normalized = normalizeAdm(rawAdm);
-        stu = systemByNormalized.get(normalized);
+      const allStudents = subjectStreamGroups.flatMap(g => g.students);
+      const normalizeAdm = (value: string) => value.trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
+
+      const systemByNormalized = new Map<string, typeof state.students[number]>();
+      allStudents.forEach(s => {
+        const n = normalizeAdm(s.admissionNo);
+        if (!systemByNormalized.has(n)) systemByNormalized.set(n, s);
+      });
+
+      const updates: { studentId: string; score: number | null; sheetId: string }[] = [];
+
+      for (const row of rows) {
+        const rawAdm = String(row.admissionNo).trim();
+        if (!rawAdm) continue;
+
+        let stu: typeof state.students[number] | undefined;
+
+        const manualKey = rawAdm;
+        if (manualMap[manualKey]) {
+          stu = allStudents.find(s => s.id === manualMap[manualKey]);
+        }
+
+        if (!stu) {
+          const normalized = normalizeAdm(rawAdm);
+          stu = systemByNormalized.get(normalized);
+        }
+
+         if (!stu) continue;
+
+        const stuSheet = stateRef.current.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId) || ensureSheetFor(stu.streamId, stu.classId);
+        if (!stuSheet) continue;
+        updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
       }
 
-      if (!stu) continue;
-
-      const stuSheet = state.sheets.find(s => s.streamId === stu.streamId && s.subjectId === subjectId && s.examId === examId) || ensureSheetFor(stu.streamId, stu.classId);
-      if (!stuSheet) continue;
-      updates.push({ studentId: stu.id, score: row.score, sheetId: stuSheet.id });
-    }
-
-    if (updates.length === 0) {
-      toast.error("No valid matches found after review");
-      return;
-    }
+      if (updates.length === 0) {
+        toast.error("No valid matches found after review");
+        return;
+      }
 
       update(s => {
         for (const u of updates) {
@@ -469,25 +470,31 @@ export default function MarkEntry() {
 
       saveState(stateRef.current);
       toast.success(`Imported ${updates.length} marks`);
-    setImportOpen(false);
-    setImportText("");
-    setUnmatched([]);
-    setManualMap({});
+      setImportOpen(false);
+      setImportText("");
+      setUnmatched([]);
+      setManualMap({});
 
-    const token = localStorage.getItem("ac_token");
-    if (!token) {
-      toast.info("Marks saved locally. Sign in to sync them to the cloud.");
-    } else if (stateRef.current.online) {
-      const result = await syncNow();
-      if (result && result.pushed > 0) {
-        toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);
-      } else if (result === null) {
-        toast.info("Marks saved locally. Sync skipped.");
+      const token = localStorage.getItem("ac_token");
+      if (!token) {
+        toast.info("Marks saved locally. Sign in to sync them to the cloud.");
+      } else if (stateRef.current.online) {
+        const result = await syncNow();
+        if (result && result.pushed > 0) {
+          toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);
+        } else if (result === null) {
+          toast.info("Marks saved locally. Sync skipped.");
+        } else {
+          toast.info("Marks saved locally. They will sync later.");
+        }
       } else {
-        toast.info("Marks saved locally. They will sync later.");
+        toast.info("Marks saved locally. They will sync when you're back online.");
       }
-    } else {
-      toast.info("Marks saved locally. They will sync when you're back online.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Import failed";
+      toast.error(msg);
+    } finally {
+      setImportBusy(false);
     }
   };
 
