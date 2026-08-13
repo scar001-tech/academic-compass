@@ -383,15 +383,58 @@ function initialState(): AppState {
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed as AppState;
+      }
+    }
+  } catch (err) {
+    console.warn("[loadState] failed to load state, resetting", err);
+  }
   const s = initialState();
-  localStorage.setItem(KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {}
   return s;
 }
 
 export function saveState(s: AppState) {
-  localStorage.setItem(KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+  } catch (err) {
+    console.warn("[saveState] first save failed, trying trimmed state", err);
+    try {
+      const trimmed = trimStateForStorage(s);
+      localStorage.setItem(KEY, JSON.stringify(trimmed));
+    } catch (trimErr) {
+      console.warn("[saveState] trimmed save failed, saving minimal state", trimErr);
+      try {
+        const minimal = minimalState(s);
+        localStorage.setItem(KEY, JSON.stringify(minimal));
+      } catch (minErr) {
+        console.error("[saveState] unable to save state to localStorage", minErr);
+      }
+    }
+  }
+}
+
+function trimStateForStorage(s: AppState): AppState {
+  const trimmed = structuredClone(s);
+  trimmed.conflicts = trimmed.conflicts.filter(c => c.status === "pending");
+  const pendingEntryIds = new Set(trimmed.entries.filter(e => e.pending).map(e => e.id));
+  trimmed.entries = trimmed.entries.filter(e => e.pending || pendingEntryIds.size === 0);
+  if (trimmed.entries.length > 500) {
+    trimmed.entries = trimmed.entries.filter(e => e.pending).slice(-500);
+  }
+  return trimmed;
+}
+
+function minimalState(s: AppState): AppState {
+  const minimal = structuredClone(s);
+  minimal.entries = minimal.entries.filter(e => e.pending).slice(-200);
+  minimal.conflicts = minimal.conflicts.filter(c => c.status === "pending").slice(-100);
+  return minimal;
 }
 
 export function resetState(): AppState {
