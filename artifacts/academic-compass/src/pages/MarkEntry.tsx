@@ -17,7 +17,7 @@ import type { MarkEntry } from "@/lib/schoolData";
 import * as XLSX from "xlsx";
 
 export default function MarkEntry() {
-  const { state, activeCurriculum, update, setMarkScore, syncNow } = useSchool();
+  const { state, activeCurriculum, update, setMarkScore, syncNow, setActiveCurriculum } = useSchool();
   const { isTeacher, isSeniorTeacher, isPrincipal, isHod, isReadOnly } = useAuth();
   const [params, setParams] = useSearchParams();
   const stateRef = useRef(state);
@@ -674,6 +674,10 @@ export default function MarkEntry() {
       <Card className="p-3 md:p-4 mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
+            <Select value={activeCurriculum} onValueChange={(v) => { setActiveCurriculum(v as CurriculumId); setClassId(""); setStreamId(""); setSubjectId(""); setExamId(""); }}>
+              <SelectTrigger><SelectValue placeholder="Curriculum"/></SelectTrigger>
+              <SelectContent>{state.curricula.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+            </Select>
             <Select value={classId} onValueChange={(v) => { setClassId(v); setStreamId(""); }}>
               <SelectTrigger><SelectValue placeholder="Class / Grade"/></SelectTrigger>
               <SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -686,16 +690,18 @@ export default function MarkEntry() {
               <SelectTrigger><SelectValue placeholder="Subject"/></SelectTrigger>
               <SelectContent>{subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
             </Select>
-            <Select value={examId} onValueChange={setExamId}>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
+             <Select value={examId} onValueChange={setExamId}>
               <SelectTrigger><SelectValue placeholder="Exam"/></SelectTrigger>
               <SelectContent>{exams.map(e => <SelectItem key={e.id} value={e.id}>{e.name} · T{e.term}</SelectItem>)}</SelectContent>
             </Select>
-          </div>
-          <div className="flex gap-2">
-            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileImport} />
-            <Button variant="outline" size="sm" disabled={!subjectId || !examId} onClick={() => fileInputRef.current?.click()}>
-              <Upload className="h-4 w-4 mr-1"/>Import marks
-            </Button>
+            <div className="flex gap-2">
+              <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileImport} />
+              <Button variant="outline" size="sm" disabled={!subjectId || !examId} onClick={() => fileInputRef.current?.click()}>
+                <Upload className="h-4 w-4 mr-1"/>Import marks
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
