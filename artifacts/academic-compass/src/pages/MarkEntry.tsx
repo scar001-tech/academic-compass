@@ -717,9 +717,12 @@ export default function MarkEntry() {
                   <div className="font-medium text-sm">
                     {state.subjects.find(s => s.id === subjectId)?.name} · {group.streamName}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground mt-1">
                     {state.exams.find(e => e.id === examId)?.name} · {group.students.length} students
                     {sheet?.locked && " · 🔒 locked"}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    Marks are saved per exam and will not overwrite other exams.
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -771,10 +774,12 @@ export default function MarkEntry() {
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" /> Import Marks
             </DialogTitle>
-            <DialogDescription>
-              Paste CSV data or upload an Excel file for <b>{state.subjects.find(s => s.id === subjectId)?.name || "selected subject"}</b>.
-              Expected format: <code>admissionNo, score</code>.
-            </DialogDescription>
+          <DialogDescription>
+            Import marks for <b>{state.subjects.find(s => s.id === subjectId)?.name || "selected subject"}</b> in 
+            <b> {state.exams.find(e => e.id === examId)?.name || "selected exam"}</b>.
+            These marks will be saved separately and will not overwrite marks from other exams.
+            Expected format: <code>admissionNo, score</code>.
+          </DialogDescription>
           </DialogHeader>
            <div className="space-y-4">
              <div>
