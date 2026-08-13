@@ -39,6 +39,9 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const lastSnapshotRef = useRef<{ hash: string; ts: number } | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   useEffect(() => { saveState(state); }, [state]);
   useEffect(() => { localStorage.setItem("scholaris_active", activeCurriculum); }, [activeCurriculum]);
 
@@ -74,85 +77,127 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
     try {
       const s = stateRef.current;
 
-      await pushSchoolSnapshot({
-        students: s.students,
-        teachers: s.teachers,
-        classes: s.classes,
-        streams: s.streams,
-        subjects: s.subjects,
-        exams: s.exams,
-        sheets: s.sheets,
-        curricula: s.curricula,
-        settings: s.settings,
-        classRemarks: s.classRemarks,
-        principalRemarks: s.principalRemarks,
-        deletedIds: s.deletedIds ?? [],
-      });
-
       const pending = s.entries.filter(e => e.pending);
-      let pushed = 0, conflicted = 0;
-      if (pending.length > 0) {
-        const results = await pushMarkEntries(pending.map(e => ({
-          id: e.id,
-          curriculumId: s.sheets.find(sh => sh.id === e.sheetId)?.curriculumId ?? "cbc",
-          sheetId: e.sheetId,
-          studentId: e.studentId,
-          score: e.score,
-          version: e.version ?? 1,
-          deviceName: s.deviceName,
-        })));
-        const syncedIds = new Set<string>();
-        for (const r of results) {
-          if (r.status === "ok") {
-            pushed++;
-            syncedIds.add(r.id);
-          } else if (r.status === "conflict") {
-            conflicted++;
-          }
-        }
-        if (syncedIds.size > 0) {
-          update((n) => {
-            for (const id of syncedIds) {
-              const e = n.entries.find(x => x.id === id);
-              if (e) {
-                e.pending = false;
-                e.version = (e.version ?? 1) + 1;
-              }
-            }
-            n.syncQueue = n.entries.filter(e => e.pending).map(e => e.id);
-          });
-        }
-      }
-
       const pendingSlots = (s.timetable ?? []).filter(sl => sl.pending);
-      if (pendingSlots.length > 0) {
-        await pushTimetableSlots(pendingSlots.map(sl => ({
-          id: sl.id,
-          curriculum_id: sl.curriculumId,
-          class_id: sl.classId,
-          stream_id: sl.streamId ?? null,
-          day_of_week: sl.dayOfWeek,
-          period: sl.period,
-          start_time: sl.startTime ?? null,
-          end_time: sl.endTime ?? null,
-          subject_id: sl.subjectId ?? null,
-          teacher_id: sl.teacherId ?? null,
-          room: sl.room ?? null,
-          version: sl.version ?? 1,
-          updated_by: null,
-          device_name: s.deviceName,
-          updated_at: new Date().toISOString(),
-        })));
-      }
 
-      const [remoteEntries, remoteSlots, remoteConflicts] = await Promise.all([
-        fetchAllMarkEntries(),
-        fetchAllTimetableSlots(),
-        fetchPendingConflicts(),
+      const snapshotPayload = JSON.stringify({
+        students: s.students.length,
+        teachers: s.teachers.length,
+        classes: s.classes.length,
+        streams: s.streams.length,
+        subjects: s.subjects.length,
+        exams: s.exams.length,
+        sheets: s.sheets.length,
+        classRemarks: s.classRemarks.length,
+        principalRemarks: s.principalRemarks.length,
+        settings: s.settings.schoolName,
+        deletedIds: s.deletedIds?.length ?? 0,
+      });
+      const skipSnapshot = lastSnapshotRef.current?.hash === snapshotPayload;
+
+      const snapshotPromise = skipSnapshot
+        ? Promise.resolve("skipped" as const)
+        : pushSchoolSnapshot({
+            students: s.students,
+            teachers: s.teachers,
+            classes: s.classes,
+            streams: s.streams,
+            subjects: s.subjects,
+            exams: s.exams,
+            sheets: s.sheets,
+            curricula: s.curricula,
+            settings: s.settings,
+            classRemarks: s.classRemarks,
+            principalRemarks: s.principalRemarks,
+            deletedIds: s.deletedIds ?? [],
+          });
+
+      const markPromise =
+        pending.length > 0
+          ? pushMarkEntries(
+              pending.map((e) => ({
+                id: e.id,
+                curriculumId: s.sheets.find((sh) => sh.id === e.sheetId)?.curriculumId ?? "cbc",
+                sheetId: e.sheetId,
+                studentId: e.studentId,
+                score: e.score,
+                version: e.version ?? 1,
+                deviceName: s.deviceName,
+              }))
+            )
+          : Promise.resolve([]);
+
+      const slotPromise =
+        pendingSlots.length > 0
+          ? pushTimetableSlots(
+              pendingSlots.map((sl) => ({
+                id: sl.id,
+                curriculum_id: sl.curriculumId,
+                class_id: sl.classId,
+                stream_id: sl.streamId ?? null,
+                day_of_week: sl.dayOfWeek,
+                period: sl.period,
+                start_time: sl.startTime ?? null,
+                end_time: sl.endTime ?? null,
+                subject_id: sl.subjectId ?? null,
+                teacher_id: sl.teacherId ?? null,
+                room: sl.room ?? null,
+                version: sl.version ?? 1,
+                updated_by: null,
+                device_name: s.deviceName,
+                updated_at: new Date().toISOString(),
+              }))
+            )
+          : Promise.resolve([]);
+
+      const [snapshotStatus, markResults, _slotResults] = await Promise.all([
+        snapshotPromise,
+        markPromise,
+        slotPromise,
       ]);
 
+      if (!skipSnapshot && snapshotStatus === "ok") {
+        lastSnapshotRef.current = { hash: snapshotPayload, ts: Date.now() };
+      }
+
+      let pushed = 0,
+        conflicted = 0;
+      const markStatuses = Array.isArray(markResults) ? markResults : [];
+      for (const r of markStatuses) {
+        if (r.status === "ok") {
+          pushed++;
+        } else if (r.status === "conflict") {
+          conflicted++;
+        }
+      }
+
+      if (pushed > 0 || conflicted > 0) {
+        update((n) => {
+          const syncedIds = new Set<string>();
+          for (const r of markStatuses) {
+            if (r.status === "ok") syncedIds.add(r.id);
+          }
+          for (const id of syncedIds) {
+            const e = n.entries.find((x) => x.id === id);
+            if (e) {
+              e.pending = false;
+              e.version = (e.version ?? 1) + 1;
+            }
+          }
+          n.syncQueue = n.entries.filter((e) => e.pending).map((e) => e.id);
+        });
+      }
+
+      const [remoteEntries, remoteSlots, remoteConflicts, remoteSnapshot] =
+        await Promise.all([
+          fetchAllMarkEntries(),
+          fetchAllTimetableSlots(),
+          fetchPendingConflicts(),
+          fetchSchoolSnapshot(),
+        ]);
+
       update((n) => {
-        const localById = new Map(n.entries.map(e => [e.id, e]));
+        const localById = new Map(n.entries.map((e) => [e.id, e]));
         const mergedEntries = new Map<string, any>(localById);
 
         for (const r of remoteEntries as RemoteMarkEntry[]) {
@@ -185,9 +230,9 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
         }
 
         n.entries = Array.from(mergedEntries.values());
-        n.syncQueue = n.entries.filter(e => e.pending).map(e => e.id);
+        n.syncQueue = n.entries.filter((e) => e.pending).map((e) => e.id);
 
-        n.timetable = (remoteSlots as RemoteTimetableSlot[]).map(r => ({
+        n.timetable = (remoteSlots as RemoteTimetableSlot[]).map((r) => ({
           id: r.id,
           curriculumId: r.curriculum_id as CurriculumId,
           classId: r.class_id,
@@ -204,9 +249,10 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
           updatedBy: r.device_name ?? "Cloud",
           pending: false,
         }));
-        const remoteIds = new Set(n.timetable.map(t => t.id));
-        (stateRef.current.timetable ?? []).forEach(local => {
-          if (local.pending && !remoteIds.has(local.id)) n.timetable.push(local);
+        const remoteIds = new Set(n.timetable.map((t) => t.id));
+        (stateRef.current.timetable ?? []).forEach((local) => {
+          if (local.pending && !remoteIds.has(local.id))
+            n.timetable.push(local);
         });
 
         n.conflicts = remoteConflicts
@@ -222,31 +268,50 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
             timestamp: new Date(c.created_at).getTime(),
             status: "pending" as const,
             ...(c.entity === "mark" ? decodeMarkEntity(n, c.entity_id) : {}),
-            ...(c.entity === "timetable" ? { timetableSlotId: c.entity_id } : {}),
+            ...(c.entity === "timetable"
+              ? { timetableSlotId: c.entity_id }
+              : {}),
           }));
 
-        n.syncQueue = n.entries.filter(e => e.pending).map(e => e.id);
+        n.syncQueue = n.entries.filter((e) => e.pending).map((e) => e.id);
         n.lastSyncAt = Date.now();
       });
 
-      const remoteSnapshot = await fetchSchoolSnapshot();
       if (remoteSnapshot) {
         update((n) => {
-          const arrays = ["students","teachers","classes","streams","subjects","exams","sheets","classRemarks","principalRemarks"] as const;
-          const deleted = new Set((remoteSnapshot.deletedIds ?? []).map(String));
+          const arrays = [
+            "students",
+            "teachers",
+            "classes",
+            "streams",
+            "subjects",
+            "exams",
+            "sheets",
+            "classRemarks",
+            "principalRemarks",
+          ] as const;
+          const deleted = new Set(
+            (remoteSnapshot.deletedIds ?? []).map(String)
+          );
           for (const key of arrays) {
             const src = (n[key] ?? []) as any[];
             const kept = src.filter((item) => !deleted.has(String(item.id)));
             const remoteArr = remoteSnapshot[key] ?? [];
             const map = new Map<string, any>();
-            for (const item of [...kept, ...remoteArr]) {
+            for (const item of [...kept, remoteArr]) {
               if (!item?.id) continue;
               const existing = map.get(item.id);
-              if (!existing || (item.updatedAt && (!existing.updatedAt || item.updatedAt > existing.updatedAt))) {
+              if (
+                !existing ||
+                (item.updatedAt &&
+                  (!existing.updatedAt || item.updatedAt > existing.updatedAt))
+              ) {
                 map.set(item.id, item);
               }
             }
-            n[key] = Array.from(map.values()).sort((a: any, b: any) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0)) as any;
+            n[key] = Array.from(map.values()).sort((a: any, b: any) =>
+              (a.updatedAt ?? 0) - (b.updatedAt ?? 0)
+            ) as any;
           }
           if (remoteSnapshot.curricula?.length) {
             n.curricula = remoteSnapshot.curricula;
@@ -258,8 +323,12 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      if (pushed) toast.success(`Synced ${pushed} change${pushed > 1 ? "s" : ""}`);
-      if (conflicted) toast.warning(`${conflicted} conflict${conflicted > 1 ? "s" : ""} to resolve`);
+      if (pushed)
+        toast.success(`Synced ${pushed} change${pushed > 1 ? "s" : ""}`);
+      if (conflicted)
+        toast.warning(
+          `${conflicted} conflict${conflicted > 1 ? "s" : ""} to resolve`
+        );
       return { pushed, conflicted };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -270,25 +339,30 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
     }
   }, [update, syncing]);
 
+  const debouncedSyncNow = useCallback(() => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => { syncNow(); }, 150);
+  }, [syncNow]);
+
   useEffect(() => {
     if (state.online) {
       const hasPending =
         state.entries.some(e => e.pending) ||
         (state.timetable ?? []).some(t => t.pending);
-      if (hasPending) syncNow();
+      if (hasPending) debouncedSyncNow();
     }
-  }, [state.online]); // eslint-disable-line
+  }, [state.online, debouncedSyncNow]); // eslint-disable-line
 
   useEffect(() => {
     if (!localStorage.getItem("ac_token")) return;
-    const onFocus = () => { if (navigator.onLine) syncNow(); };
+    const onFocus = () => { if (navigator.onLine) debouncedSyncNow(); };
     window.addEventListener("focus", onFocus);
-    const interval = setInterval(() => { if (navigator.onLine) syncNow(); }, 30000);
+    const interval = setInterval(() => { if (navigator.onLine) debouncedSyncNow(); }, 30000);
     return () => {
       window.removeEventListener("focus", onFocus);
       clearInterval(interval);
     };
-  }, [syncNow]);
+  }, [debouncedSyncNow]);
 
   useEffect(() => {
     if (localStorage.getItem("ac_token")) {
