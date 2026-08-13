@@ -540,11 +540,11 @@ export function statsForStudentAllTerms(
       terms.push({ examId: exam.id, term: exam.term, year: exam.year, score, grade, rank, total: sorted.length, deviation });
     });
     if (terms.length) {
-      rows.push({ subjectId: sub.id, subject: sub.name, terms });
+      rows.push({ subjectId: sub.id, subject: sub.name, terms: terms.slice(0, 2) });
     }
   });
 
-  return { rows, terms: termList };
+  return { rows, terms: termList.slice(0, 2) };
 }
 
 export function identifyWeakAreas(
