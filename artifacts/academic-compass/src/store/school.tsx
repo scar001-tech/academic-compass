@@ -104,23 +104,33 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
                 updatedAt: new Date(r.updated_at).getTime(), updatedBy: r.device_name ?? "Cloud",
               });
             } else {
-              mergedEntries.set(r.id, { ...existing, version: r.version, pending: false });
+              mergedEntries.set(r.id, { ...existing, version: r.version, pending: existing.score !== r.score });
             }
           }
           n.entries = Array.from(mergedEntries.values());
           n.syncQueue = n.entries.filter((e) => e.pending).map((e) => e.id);
-          n.timetable = (remoteSlots as RemoteTimetableSlot[]).map((r) => ({
-            id: r.id, curriculumId: r.curriculum_id as CurriculumId, classId: r.class_id,
-            streamId: r.stream_id ?? undefined, dayOfWeek: r.day_of_week, period: r.period,
-            startTime: r.start_time ?? undefined, endTime: r.end_time ?? undefined,
-            subjectId: r.subject_id ?? undefined, teacherId: r.teacher_id ?? undefined,
-            room: r.room ?? undefined, version: r.version,
-            updatedAt: new Date(r.updated_at).getTime(), updatedBy: r.device_name ?? "Cloud", pending: false,
-          }));
-          const remoteIds = new Set(n.timetable.map((t) => t.id));
-          (stateRef.current.timetable ?? []).forEach((local) => {
-            if (local.pending && !remoteIds.has(local.id)) n.timetable.push(local);
-          });
+           const mergedTimetable = new Map<string, any>();
+           for (const r of remoteSlots as RemoteTimetableSlot[]) {
+             mergedTimetable.set(r.id, {
+               id: r.id, curriculumId: r.curriculum_id as CurriculumId, classId: r.class_id,
+               streamId: r.stream_id ?? undefined, dayOfWeek: r.day_of_week, period: r.period,
+               startTime: r.start_time ?? undefined, endTime: r.end_time ?? undefined,
+               subjectId: r.subject_id ?? undefined, teacherId: r.teacher_id ?? undefined,
+               room: r.room ?? undefined, version: r.version,
+               updatedAt: new Date(r.updated_at).getTime(), updatedBy: r.device_name ?? "Cloud", pending: false,
+             });
+           }
+           (stateRef.current.timetable ?? []).forEach((local) => {
+             if (!local.pending) return;
+             const remote = mergedTimetable.get(local.id);
+             if (!remote) {
+               mergedTimetable.set(local.id, local);
+               return;
+             }
+             const changed = local.subjectId !== remote.subjectId || local.teacherId !== remote.teacherId || local.room !== remote.room || local.startTime !== remote.startTime || local.endTime !== remote.endTime;
+             mergedTimetable.set(local.id, { ...remote, ...local, pending: changed });
+           });
+           n.timetable = Array.from(mergedTimetable.values());
           n.conflicts = remoteConflicts
             .filter((c: RemoteConflict) => c.status === "pending")
             .map((c: RemoteConflict) => ({
