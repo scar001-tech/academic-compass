@@ -337,8 +337,8 @@ export default function MarkEntry() {
         return;
       }
 
-      for (const u of updates) {
-        update(s => {
+      update(s => {
+        for (const u of updates) {
           let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
           if (!e) {
             e = {
@@ -358,8 +358,8 @@ export default function MarkEntry() {
             e.pending = true;
           }
           if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
-        });
-      }
+        }
+      });
 
       toast.success(`Updated ${updates.length} marks locally`);
       setImportOpen(false);
@@ -438,31 +438,31 @@ export default function MarkEntry() {
       return;
     }
 
-    for (const u of updates) {
-      update(s => {
-        let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
-        if (!e) {
-          e = {
-            id: `e_${u.sheetId}_${u.studentId}_${Date.now()}`,
-            sheetId: u.sheetId,
-            studentId: u.studentId,
-            score: u.score,
-            updatedAt: Date.now(),
-            updatedBy: s.deviceName,
-            pending: true,
-          };
-          s.entries.push(e);
-        } else {
-          e.score = u.score;
-          e.updatedAt = Date.now();
-          e.updatedBy = s.deviceName;
-          e.pending = true;
+     update(s => {
+        for (const u of updates) {
+          let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
+          if (!e) {
+            e = {
+              id: `e_${u.sheetId}_${u.studentId}_${Date.now()}`,
+              sheetId: u.sheetId,
+              studentId: u.studentId,
+              score: u.score,
+              updatedAt: Date.now(),
+              updatedBy: s.deviceName,
+              pending: true,
+            };
+            s.entries.push(e);
+          } else {
+            e.score = u.score;
+            e.updatedAt = Date.now();
+            e.updatedBy = s.deviceName;
+            e.pending = true;
+          }
+          if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
         }
-        if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
       });
-    }
 
-    toast.success(`Imported ${updates.length} marks`);
+      toast.success(`Imported ${updates.length} marks`);
     setImportOpen(false);
     setImportText("");
     setUnmatched([]);
