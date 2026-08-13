@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { gradeFor, type SheetStatus, type ID, type CurriculumId } from "@/lib/schoolData";
+import { gradeFor, saveState, type SheetStatus, type ID, type CurriculumId } from "@/lib/schoolData";
 import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { MarkEntry } from "@/lib/schoolData";
@@ -231,7 +231,10 @@ export default function MarkEntry() {
       if (!s.syncQueue.includes(e.id)) s.syncQueue.push(e.id);
     });
 
-    if (stateRef.current.online) syncNow();
+    saveState(state);
+    if (stateRef.current.online) {
+      syncNow().catch(() => {});
+    }
   };
 
   const parseImportCsv = (raw: string): Array<{ admissionNo: string; score: number | null }> => {
@@ -361,6 +364,7 @@ export default function MarkEntry() {
         }
       });
 
+      saveState(state);
       toast.success(`Updated ${updates.length} marks locally`);
       setImportOpen(false);
       setImportText("");
@@ -438,7 +442,7 @@ export default function MarkEntry() {
       return;
     }
 
-     update(s => {
+      update(s => {
         for (const u of updates) {
           let e = s.entries.find(x => x.sheetId === u.sheetId && x.studentId === u.studentId);
           if (!e) {
@@ -462,6 +466,7 @@ export default function MarkEntry() {
         }
       });
 
+      saveState(state);
       toast.success(`Imported ${updates.length} marks`);
     setImportOpen(false);
     setImportText("");

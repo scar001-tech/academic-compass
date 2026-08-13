@@ -74,9 +74,6 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   const syncNow = useCallback(async (): Promise<{ pushed: number; conflicted: number } | null> => {
     if (syncingRef.current) return null;
     if (!localStorage.getItem("ac_token")) return null;
-    const now = Date.now();
-    if (now - (lastSnapshotRef.current?.ts ?? 0) < 1000) return null;
-    lastSnapshotRef.current = { hash: "", ts: now };
     setSyncing(true);
     try {
       const s = stateRef.current;
@@ -241,13 +238,13 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
               score: r.score, updatedAt: new Date(r.updated_at).getTime(),
               updatedBy: r.device_name ?? "Cloud", version: r.version,
             });
-          } else if (!existing.pending) {
+          } else if (existing.pending) {
+            mergedEntries.set(r.id, { ...existing, version: r.version });
+          } else {
             mergedEntries.set(r.id, {
               ...existing, score: r.score, version: r.version,
               updatedAt: new Date(r.updated_at).getTime(), updatedBy: r.device_name ?? "Cloud",
             });
-          } else {
-            mergedEntries.set(r.id, { ...existing, version: r.version, pending: false });
           }
         }
         n.entries = Array.from(mergedEntries.values());
