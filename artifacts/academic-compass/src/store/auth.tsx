@@ -73,7 +73,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const clearSession = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setSession(null);

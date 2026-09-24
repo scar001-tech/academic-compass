@@ -68,6 +68,7 @@ export interface Teacher {
 
 export interface Student {
   id: ID;
+  updatedAt?: number;
   curriculumId: CurriculumId;
   admissionNo: string;
   name: string;
@@ -243,6 +244,12 @@ export function gradeFor(score: number | null | undefined, scale: GradeBand[]): 
   return scale.find((b) => score >= b.min && score <= b.max) ?? null;
 }
 
+export function sortStudentsByAdmissionNo(students: Student[]): Student[] {
+  return [...students].sort((a, b) =>
+    a.admissionNo.localeCompare(b.admissionNo, undefined, { numeric: true })
+  );
+}
+
 export function createMarkSheetsForExam(state: AppState, exam: Exam): { sheets: MarkSheet[]; entries: MarkEntry[] } {
   const sheets: MarkSheet[] = [];
   const entries: MarkEntry[] = [];
@@ -387,9 +394,14 @@ export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        return parsed as AppState;
+      if (raw.length > 4_000_000) {
+        console.warn("[loadState] stored state too large, resetting");
+        localStorage.removeItem(KEY);
+      } else {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          return parsed as AppState;
+        }
       }
     }
   } catch (err) {
@@ -406,18 +418,28 @@ export function saveState(s: AppState) {
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch (err) {
-    console.warn("[saveState] first save failed, trying trimmed state", err);
-    try {
-      const trimmed = trimStateForStorage(s);
-      localStorage.setItem(KEY, JSON.stringify(trimmed));
-    } catch (trimErr) {
-      console.warn("[saveState] trimmed save failed, saving minimal state", trimErr);
+    const isQuota = err instanceof DOMException && (
+      err.name === "QuotaExceededError" || err.code === 22 || err.code === 1014
+    );
+    if (isQuota) {
       try {
-        const minimal = minimalState(s);
-        localStorage.setItem(KEY, JSON.stringify(minimal));
-      } catch (minErr) {
-        console.error("[saveState] unable to save state to localStorage", minErr);
+        const trimmed = trimStateForStorage(s);
+        localStorage.setItem(KEY, JSON.stringify(trimmed));
+      } catch {
+        try {
+          const minimal = minimalState(s);
+          localStorage.setItem(KEY, JSON.stringify(minimal));
+        } catch {
+          try {
+            localStorage.removeItem(KEY);
+            localStorage.setItem(KEY, JSON.stringify(minimalState(s)));
+          } catch {
+            console.error("[saveState] unable to save state to localStorage");
+          }
+        }
       }
+    } else {
+      console.warn("[saveState] save failed", err);
     }
   }
 }
@@ -425,11 +447,10 @@ export function saveState(s: AppState) {
 function trimStateForStorage(s: AppState): AppState {
   const trimmed = structuredClone(s);
   trimmed.conflicts = trimmed.conflicts.filter(c => c.status === "pending");
-  const pendingEntryIds = new Set(trimmed.entries.filter(e => e.pending).map(e => e.id));
-  trimmed.entries = trimmed.entries.filter(e => e.pending || pendingEntryIds.size === 0);
-  if (trimmed.entries.length > 500) {
-    trimmed.entries = trimmed.entries.filter(e => e.pending).slice(-500);
-  }
+  const pendingEntries = trimmed.entries.filter(e => e.pending);
+  const nonPendingEntries = trimmed.entries.filter(e => !e.pending);
+  const recentNonPending = nonPendingEntries.slice(-100);
+  trimmed.entries = [...recentNonPending, ...pendingEntries].slice(-500);
   return trimmed;
 }
 

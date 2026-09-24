@@ -9,13 +9,13 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
-import { statsForStudentExam, identifyWeakAreas } from "@/lib/schoolData";
+import { statsForStudentExam, identifyWeakAreas, sortStudentsByAdmissionNo } from "@/lib/schoolData";
 import { Printer, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function Transcripts() {
   const { state, activeCurriculum, update } = useSchool();
-  const students = state.students.filter(s => s.curriculumId === activeCurriculum);
+  const students = sortStudentsByAdmissionNo(state.students.filter(s => s.curriculumId === activeCurriculum));
   const [studentId, setStudentId] = useState<string>(students[0]?.id || "");
   const student = state.students.find(s => s.id === studentId);
   const exams = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")

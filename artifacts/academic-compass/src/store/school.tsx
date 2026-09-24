@@ -1,3 +1,4 @@
+/* @refresh reset */
 import { useState, useCallback, useEffect, useRef, useMemo, createContext, useContext } from "react";
 import {
   AppState, CurriculumId, ID, SyncConflict, TimetableSlot,
@@ -45,7 +46,10 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
   const syncingRef = useRef(syncing);
   syncingRef.current = syncing;
 
-  useEffect(() => { saveState(state); }, [state]);
+  useEffect(() => {
+    const timer = setTimeout(() => saveState(state), 1000);
+    return () => clearTimeout(timer);
+  }, [state]);
   useEffect(() => { localStorage.setItem("scholaris_active", activeCurriculum); }, [activeCurriculum]);
 
   const update = useCallback((updater: (s: AppState) => void) => {
@@ -80,7 +84,18 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
 
       const pending = s.entries.filter(e => e.pending);
       const pendingSlots = (s.timetable ?? []).filter(sl => sl.pending);
+      const localSnapshot = {
+        students: s.students, teachers: s.teachers, classes: s.classes, streams: s.streams,
+        subjects: s.subjects, exams: s.exams, sheets: s.sheets, curricula: s.curricula,
+        settings: s.settings, classRemarks: s.classRemarks, principalRemarks: s.principalRemarks,
+        deletedIds: s.deletedIds ?? [],
+      };
+      const snapshotPayload = JSON.stringify(localSnapshot);
       if (!pending.length && !pendingSlots.length) {
+        if (lastSnapshotRef.current?.hash !== snapshotPayload) {
+          const snapshotStatus = await pushSchoolSnapshot(localSnapshot);
+          if (snapshotStatus === "ok") lastSnapshotRef.current = { hash: snapshotPayload, ts: Date.now() };
+        }
         const [remoteEntries, remoteSlots, remoteConflicts, remoteSnapshot] = await Promise.all([
           fetchAllMarkEntries(),
           fetchAllTimetableSlots(),
@@ -154,7 +169,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
               const kept = src.filter((item) => !deleted.has(String(item.id)));
               const remoteArr = remoteSnapshot[key] ?? [];
               const map = new Map<string, any>();
-              for (const item of [...kept, remoteArr]) {
+              for (const item of [...kept, ...remoteArr]) {
                 if (!item?.id) continue;
                 const existing = map.get(item.id);
                 if (!existing || (item.updatedAt && (!existing.updatedAt || item.updatedAt > existing.updatedAt))) {
@@ -171,22 +186,11 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
         return { pushed: 0, conflicted: 0 };
       }
 
-      const snapshotPayload = JSON.stringify({
-        students: s.students.length, teachers: s.teachers.length, classes: s.classes.length,
-        streams: s.streams.length, subjects: s.subjects.length, exams: s.exams.length,
-        sheets: s.sheets.length, classRemarks: s.classRemarks.length, principalRemarks: s.principalRemarks.length,
-        settings: s.settings.schoolName, deletedIds: s.deletedIds?.length ?? 0,
-      });
       const skipSnapshot = lastSnapshotRef.current?.hash === snapshotPayload;
 
       const snapshotPromise = skipSnapshot
         ? Promise.resolve("skipped" as const)
-        : pushSchoolSnapshot({
-            students: s.students, teachers: s.teachers, classes: s.classes, streams: s.streams,
-            subjects: s.subjects, exams: s.exams, sheets: s.sheets, curricula: s.curricula,
-            settings: s.settings, classRemarks: s.classRemarks, principalRemarks: s.principalRemarks,
-            deletedIds: s.deletedIds ?? [],
-          });
+        : pushSchoolSnapshot(localSnapshot);
 
       const markPromise = pending.length > 0
         ? pushMarkEntries(pending.map((e) => ({
@@ -294,7 +298,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
             const kept = src.filter((item) => !deleted.has(String(item.id)));
             const remoteArr = remoteSnapshot[key] ?? [];
             const map = new Map<string, any>();
-            for (const item of [...kept, remoteArr]) {
+            for (const item of [...kept, ...remoteArr]) {
               if (!item?.id) continue;
               const existing = map.get(item.id);
               if (!existing || (item.updatedAt && (!existing.updatedAt || item.updatedAt > existing.updatedAt))) {
@@ -331,7 +335,7 @@ export function SchoolProvider({ children }: { children: React.ReactNode }) {
       const hasPending =
         state.entries.some(e => e.pending) ||
         (state.timetable ?? []).some(t => t.pending);
-      if (hasPending) debouncedSyncNow();
+      if (hasPending || localStorage.getItem("ac_token")) debouncedSyncNow();
     }
   }, [state.online, debouncedSyncNow]);
 

@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import { PDFParse } from "pdf-parse";
 import { GlobalWorkerOptions } from "pdfjs-dist";
 import mammoth from "mammoth";
-import { statsForStudentExam } from "@/lib/schoolData";
+import { statsForStudentExam, sortStudentsByAdmissionNo } from "@/lib/schoolData";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -25,7 +25,7 @@ const ADMISSION_PATTERN = /^(ADM|ADMISSION|STUDENT|LEARNER|PUPIL)?[\s:\-#/]*([A-
 const NAME_PATTERN = /^[A-Za-z][A-Za-z\s\.\'\-]{1,60}$/i;
 
 export default function Students() {
-  const { state, activeCurriculum, update } = useSchool();
+  const { state, activeCurriculum, update, syncNow } = useSchool();
   const { canManageStudents } = useAuth();
   const [q, setQ] = useState("");
   const [classFilter, setClassFilter] = useState<string>("all");
@@ -45,12 +45,22 @@ export default function Students() {
   });
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{ admissionNo: string; name: string }[] | null>(null);
-  const classes = state.classes.filter(c => c.curriculumId === activeCurriculum);
-  const streams = state.streams.filter(s => classFilter === "all" || s.classId === classFilter);
-  const students = state.students.filter(s => s.curriculumId === activeCurriculum)
-    .filter(s => classFilter === "all" || s.classId === classFilter)
-    .filter(s => streamFilter === "all" || s.streamId === streamFilter)
-    .filter(s => !q || s.name.toLowerCase().includes(q.toLowerCase()) || s.admissionNo.toLowerCase().includes(q.toLowerCase()));
+  const classes = useMemo(() => state.classes.filter(c => c.curriculumId === activeCurriculum), [state.classes, activeCurriculum]);
+  const streams = useMemo(() => state.streams.filter(s => classFilter === "all" || s.classId === classFilter), [state.streams, classFilter]);
+  const students = useMemo(() => sortStudentsByAdmissionNo(
+    state.students.filter(s => s.curriculumId === activeCurriculum)
+      .filter(s => classFilter === "all" || s.classId === classFilter)
+      .filter(s => streamFilter === "all" || s.streamId === streamFilter)
+      .filter(s => !q || s.name.toLowerCase().includes(q.toLowerCase()) || s.admissionNo.toLowerCase().includes(q.toLowerCase()))
+  ), [state.students, activeCurriculum, classFilter, streamFilter, q]);
+  const printExamStats = useMemo(() => {
+    const stats = new Map<string, ReturnType<typeof statsForStudentExam>>();
+    if (printExamId === "none") return stats;
+    state.students
+      .filter(s => s.curriculumId === activeCurriculum)
+      .forEach(s => stats.set(s.id, statsForStudentExam(state, s.id, printExamId)));
+    return stats;
+  }, [state.students, state.sheets, state.entries, state.curricula, activeCurriculum, printExamId]);
 
   const addStudent = () => {
     if (!canManageStudents) { toast.error("Only the Principal or Senior Teacher can add learners"); return; }
@@ -370,7 +380,8 @@ export default function Students() {
                   </td>
                   <td>
                     <input className="inline-edit w-28" value={(s as any).parentNumber || ""} disabled={!canManageStudents}
-                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) (x as any).parentNumber = e.target.value; })} />
+                      onChange={(e) => update(st => { const x = st.students.find(x => x.id === s.id); if (x) { x.parentNumber = e.target.value; x.updatedAt = Date.now(); } })}
+                      onBlur={() => { void syncNow(); }} />
                   </td>
                   <td>
                     <input className="inline-edit w-28" value={(s as any).parentIdNumber || ""} disabled={!canManageStudents}
@@ -534,7 +545,7 @@ export default function Students() {
                         </thead>
                         <tbody>
                           {classStudents.flatMap((s, i) => {
-                            const stats = printExamId !== "none" ? statsForStudentExam(state, s.id, printExamId) : null;
+                              const stats = printExamStats.get(s.id) ?? null;
                             const studentRow = (
                               <tr key={s.id}>
                                 <td className="border p-1">{i + 1}</td>
@@ -605,7 +616,7 @@ export default function Students() {
                           </thead>
                           <tbody>
                             {streamStudents.flatMap((s, i) => {
-                              const stats = printExamId !== "none" ? statsForStudentExam(state, s.id, printExamId) : null;
+                              const stats = printExamStats.get(s.id) ?? null;
                               const studentRow = (
                                 <tr key={s.id}>
                                   <td className="border p-1">{i + 1}</td>
@@ -687,7 +698,7 @@ export default function Students() {
                     </thead>
                     <tbody>
                       {classStudents.flatMap((s, i) => {
-                        const stats = printExamId !== "none" ? statsForStudentExam(state, s.id, printExamId) : null;
+                        const stats = printExamStats.get(s.id) ?? null;
                         const studentRow = (
                           <tr key={s.id}>
                             <td className="border p-1">{i + 1}</td>
@@ -758,7 +769,7 @@ export default function Students() {
                       </thead>
                       <tbody>
                         {streamStudents.flatMap((s, i) => {
-                          const stats = printExamId !== "none" ? statsForStudentExam(state, s.id, printExamId) : null;
+                          const stats = printExamStats.get(s.id) ?? null;
                           const studentRow = (
                             <tr key={s.id}>
                               <td className="border p-1">{i + 1}</td>

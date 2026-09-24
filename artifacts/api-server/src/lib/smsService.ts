@@ -8,6 +8,7 @@ export interface SmsConfig {
   accountSid?: string;
   authToken?: string;
   from?: string;
+  partnerId?: string;
   baseUrl?: string;
 }
 
@@ -134,26 +135,41 @@ async function sendSafravo(config: SmsConfig, message: SmsMessage): Promise<SmsR
     return { success: false, error: "Missing Safravo API key" };
   }
 
+  // Format phone number for Safravo (Kenya format: 254XXXXXXXXX)
+  let phoneNumber = message.to.replace(/\D/g, '');
+  if (phoneNumber.startsWith('0')) {
+    phoneNumber = '254' + phoneNumber.substring(1);
+  } else if (!phoneNumber.startsWith('254') && phoneNumber.length === 9) {
+    phoneNumber = '254' + phoneNumber;
+  }
+
   try {
     const res = await fetch(`${config.baseUrl}/sms/v1/messages`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.apiKey}`,
-        "Accept": "application/json",
-      },
+      headers: { "Content-Type": "application/json", "Accept": "*/*" },
       body: JSON.stringify({
-        to: message.to,
-        body: message.body,
-        sender_id: config.senderId || "DrumvaleSec",
+        apikey: config.apiKey,
+        partnerID: config.partnerId,
+        mobile: phoneNumber,
+        message: message.body,
+        shortcode: config.senderId || "DrumvaleSec",
       }),
     });
 
-    const data = (await res.json()) as any;
-    if (res.ok && (data.success || data.message_id || data.id)) {
-      return { success: true, messageId: data.message_id || data.id || "sent" };
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
     }
-    return { success: false, error: data.message || data.error || `Safravo error: ${res.status}` };
+    
+    console.log('[Safravo] Response:', res.status, data);
+    
+    if (res.ok && (data.success || data.message_id || data.id || data.MessageId || data.messageId)) {
+      return { success: true, messageId: data.message_id || data.id || data.MessageId || data.messageId || "sent" };
+    }
+    return { success: false, error: data.message || data.error || data.Message || data.details || `Safravo error: ${res.status} - ${text}` };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useSchool } from "@/store/school";
 import { useAuth } from "@/store/auth";
 import {
@@ -62,31 +62,40 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
 
   const multiTermStats = student ? statsForStudentAllTerms(state, student.id, selectedTerm, maxExams) : null;
 
+  const meansByStudent = useMemo(() => {
+    if (!latestExam) return new Map<ID, number>();
+    const means = new Map<ID, number>();
+    state.students
+      .filter(s => s.curriculumId === activeCurriculum)
+      .forEach(s => means.set(s.id, statsForStudentExam(state, s.id, latestExam.id).mean));
+    return means;
+  }, [state, latestExam, activeCurriculum]);
+
   const streamPosition = useMemo(() => {
     if (!student || !latestExam || !latestStats) return null;
     const streamStudents = state.students.filter(s => s.streamId === student.streamId && s.curriculumId === activeCurriculum);
     const scores: { id: string; mean: number }[] = [];
     streamStudents.forEach(s => {
-      const st = statsForStudentExam(state, s.id, latestExam.id);
-      if (st.mean > 0) scores.push({ id: s.id, mean: st.mean });
+      const mean = meansByStudent.get(s.id) ?? 0;
+      if (mean > 0) scores.push({ id: s.id, mean });
     });
     scores.sort((a, b) => b.mean - a.mean);
     const rank = scores.findIndex(s => s.id === student.id) + 1;
     return { rank, total: scores.length };
-  }, [student, latestExam, state, activeCurriculum]);
+  }, [student, latestExam, latestStats, meansByStudent, state.students, activeCurriculum]);
 
   const overallPosition = useMemo(() => {
     if (!student || !latestExam || !latestStats) return null;
     const classStudents = state.students.filter(s => s.classId === student.classId && s.curriculumId === activeCurriculum);
     const scores: { id: string; mean: number }[] = [];
     classStudents.forEach(s => {
-      const st = statsForStudentExam(state, s.id, latestExam.id);
-      if (st.mean > 0) scores.push({ id: s.id, mean: st.mean });
+      const mean = meansByStudent.get(s.id) ?? 0;
+      if (mean > 0) scores.push({ id: s.id, mean });
     });
     scores.sort((a, b) => b.mean - a.mean);
     const rank = scores.findIndex(s => s.id === student.id) + 1;
     return { rank, total: classStudents.length };
-  }, [student, latestExam, state, activeCurriculum]);
+  }, [student, latestExam, latestStats, meansByStudent, state.students, activeCurriculum]);
 
   const performanceTrend = useMemo(() => {
     if (!student || !latestExam) return [];
@@ -209,12 +218,12 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
                 <th className="p-1.5 border border-black/30"></th>
                 <th className="p-1.5 border border-black/30"></th>
                 {multiTermStats?.terms.map((t) => (
-                  <>
-                    <th key={`${t.examId}-marks`} className="text-center p-1.5 border border-black/30 w-14">MARKS</th>
-                    <th key={`${t.examId}-dev`} className="text-center p-1.5 border border-black/30 w-14">DEV.</th>
-                    <th key={`${t.examId}-grade`} className="text-center p-1.5 border border-black/30 w-12">GRADE</th>
-                    <th key={`${t.examId}-rank`} className="text-center p-1.5 border border-black/30 w-16">RANK</th>
-                  </>
+                  <Fragment key={`head-${t.examId}`}>
+                    <th className="text-center p-1.5 border border-black/30 w-14">MARKS</th>
+                    <th className="text-center p-1.5 border border-black/30 w-14">DEV.</th>
+                    <th className="text-center p-1.5 border border-black/30 w-12">GRADE</th>
+                    <th className="text-center p-1.5 border border-black/30 w-16">RANK</th>
+                  </Fragment>
                 ))}
                 <th className="p-1.5 border border-black/30"></th>
               </tr>
@@ -225,21 +234,21 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
                   <td className="p-1.5 border text-center">{i + 1}</td>
                   <td className="p-1.5 border font-medium">{r.subject}</td>
                   {r.terms.map((t) => (
-                    <>
-                      <td key={`${t.examId}-score`} className="p-1.5 border text-center">
+                    <Fragment key={`cell-${t.examId}`}>
+                      <td className="p-1.5 border text-center">
                         {t.score != null ? t.score : "—"}
                       </td>
-                      <td key={`${t.examId}-dev`} className={`p-1.5 border text-center ${t.deviation > 0 ? "text-green-700" : t.deviation < 0 ? "text-red-600" : ""}`}>
+                      <td className={`p-1.5 border text-center ${t.deviation > 0 ? "text-green-700" : t.deviation < 0 ? "text-red-600" : ""}`}>
                         {t.deviation > 0 ? "+" : ""}{t.deviation}
                       </td>
-                      <td key={`${t.examId}-grade`} className="p-1.5 border text-center">
+                      <td className="p-1.5 border text-center">
                         <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
                           style={{ backgroundColor: (t.grade === "A" || t.grade === "A-") ? "#d4edda" : t.grade === "B" ? "#d1ecf1" : t.grade === "C" ? "#fff3cd" : "#f8d7da", color: "#155724" }}>
                           {t.grade}
                         </span>
                       </td>
-                      <td key={`${t.examId}-rank`} className="p-1.5 border text-center">{t.rank ? `${t.rank}/${t.total}` : "—"}</td>
-                    </>
+                      <td className="p-1.5 border text-center">{t.rank ? `${t.rank}/${t.total}` : "—"}</td>
+                    </Fragment>
                   ))}
                   <td className="p-1.5 border">
                     <input className="w-full text-[11px] border-b border-dashed outline-none" defaultValue={filledRows.find(fr => fr.subjectId === r.subjectId)?.teacherComment || ""}

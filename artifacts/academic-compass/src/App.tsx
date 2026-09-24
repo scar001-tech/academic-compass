@@ -22,6 +22,7 @@ import Marks from "./pages/Marks";
 import Conflicts from "./pages/Conflicts";
 import Transcripts from "./pages/Transcripts";
 import Reports from "./pages/Reports";
+import ParentContacts from "./pages/ParentContacts";
 import SettingsPage from "./pages/Settings";
 import Timetable from "./pages/TimeTable";
 import Profile from "./pages/Profile";
@@ -37,7 +38,7 @@ const App = () => (
           <SchoolProvider>
             <Toaster />
             <Sonner />
-            <Analytics />
+            {import.meta.env.PROD && <Analytics />}
             <Routes>
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/auth" element={<Auth />} />
@@ -56,6 +57,7 @@ const App = () => (
                   <Route path="/conflicts" element={<Conflicts />} />
                   <Route path="/transcripts" element={<Transcripts />} />
                   <Route path="/reports" element={<Reports />} />
+                  <Route path="/parent-contacts" element={<ParentContacts />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/profile" element={<Profile />} />
                 </Route>

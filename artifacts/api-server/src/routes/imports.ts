@@ -41,6 +41,8 @@ router.post("/marks", authenticateJWT, requireRoles("admin", "principal", "senio
     const studentsByAdm = new Map(allStudents.map((s: any) => [String(s.admissionNo).trim().toLowerCase(), s]));
     const studentsById = new Map(allStudents.map((s: any) => [String(s.id).trim().toLowerCase(), s]));
     const studentsByName = new Map(allStudents.map((s: any) => [String(s.name).trim().toLowerCase(), s]));
+    const errors: Array<{ admissionNo: string; error: string }> = [];
+    const entriesToUpsert: Parameters<typeof store.upsertMarkEntries>[0] = [];
 
     const normalizeAdmission = (value: string) => String(value).trim().toLowerCase().replace(/[\s.\-\/()]/g, "");
 
@@ -51,17 +53,17 @@ router.post("/marks", authenticateJWT, requireRoles("admin", "principal", "senio
       let student = studentsByAdm.get(exactAdm) || studentsById.get(exactAdm);
       if (student) return student;
 
-      for (const [key, s] of studentsByAdm.entries()) {
+      for (const [key, s] of studentsByAdm.entries() as Iterable<[string, any]>) {
         if (normalizeAdmission(key) === normalizedAdm) return s;
       }
 
       const numericPart = admissionNo.replace(/[^0-9]/g, "").trim();
       if (numericPart) {
-        for (const [key, s] of studentsByAdm.entries()) {
+        for (const [key, s] of studentsByAdm.entries() as Iterable<[string, any]>) {
           const keyNumeric = key.replace(/[^0-9]/g, "").trim();
           if (keyNumeric && keyNumeric === numericPart) return s;
         }
-        for (const [key, s] of studentsById.entries()) {
+        for (const [key, s] of studentsById.entries() as Iterable<[string, any]>) {
           const keyNumeric = key.replace(/[^0-9]/g, "").trim();
           if (keyNumeric && keyNumeric === numericPart) return s;
         }

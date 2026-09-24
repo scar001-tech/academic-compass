@@ -40,27 +40,45 @@ export default function Dashboard() {
 
   const conflicts = state.conflicts.filter(c => c.status === "pending").length;
   const latestExam = exams.find(e => e.status !== "draft");
+  const entriesBySheet = useMemo(() => {
+    const m = new Map<string, typeof state.entries>();
+    for (const e of state.entries) {
+      if (e.score == null) continue;
+      const list = m.get(e.sheetId) ?? [];
+      list.push(e);
+      m.set(e.sheetId, list);
+    }
+    return m;
+  }, [state.entries]);
   const subjectAvgData = useMemo(() => {
     if (!latestExam) return [];
     return subjects.map((sub) => {
-      const shs     = sheets.filter(s => s.subjectId === sub.id && s.examId === latestExam.id);
-      const entries = state.entries.filter(e => shs.some(s => s.id === e.sheetId) && e.score != null);
-      const avg     = entries.length ? entries.reduce((a, b) => a + (b.score ?? 0), 0) / entries.length : 0;
+      const shs = sheets.filter(s => s.subjectId === sub.id && s.examId === latestExam.id);
+      let total = 0, count = 0;
+      for (const sh of shs) {
+        const ents = entriesBySheet.get(sh.id);
+        if (ents) { for (const e of ents) { total += e.score ?? 0; count++; } }
+      }
+      const avg = count ? total / count : 0;
       return { subject: sub.code, name: sub.name, avg: Math.round(avg * 10) / 10 };
     });
-  }, [subjects, sheets, latestExam, state.entries]);
+  }, [subjects, sheets, latestExam, entriesBySheet]);
 
   const trendData = useMemo(() => {
     return exams
       .filter(e => e.status !== "draft")
       .sort((a, b) => a.year - b.year || a.term - b.term)
       .map(ex => {
-        const shs     = sheets.filter(s => s.examId === ex.id);
-        const entries = state.entries.filter(e => shs.some(s => s.id === e.sheetId) && e.score != null);
-        const avg     = entries.length ? entries.reduce((a, b) => a + (b.score ?? 0), 0) / entries.length : 0;
+        const shs = sheets.filter(s => s.examId === ex.id);
+        let total = 0, count = 0;
+        for (const sh of shs) {
+          const ents = entriesBySheet.get(sh.id);
+          if (ents) { for (const e of ents) { total += e.score ?? 0; count++; } }
+        }
+        const avg = count ? total / count : 0;
         return { name: `${ex.name} T${ex.term}`, avg: Math.round(avg * 10) / 10 };
       });
-  }, [exams, sheets, state.entries]);
+  }, [exams, sheets, entriesBySheet]);
 
   const weakAreas = subjectAvgData.filter(s => s.avg > 0 && s.avg < 50).length;
 

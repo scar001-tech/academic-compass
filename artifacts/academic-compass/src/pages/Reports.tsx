@@ -7,10 +7,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { statsForStudentExam, statsForStudentAllTerms, type CurriculumId, type ID } from "@/lib/schoolData";
+import { statsForStudentExam, statsForStudentAllTerms, sortStudentsByAdmissionNo, type CurriculumId, type ID } from "@/lib/schoolData";
 import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare, PrinterCheck } from "lucide-react";
 import { toast } from "sonner";
 import ReportCard from "@/components/ReportCard";
+import { api } from "@/lib/api";
 
 export default function Reports() {
   const { state, activeCurriculum, setActiveCurriculum, update } = useSchool();
@@ -62,13 +63,13 @@ export default function Reports() {
 
   const filteredStudents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return state.students.filter(s => {
+    return sortStudentsByAdmissionNo(state.students.filter(s => {
       if (s.curriculumId !== activeCurriculum) return false;
       if (classId && s.classId !== classId) return false;
       if (streamId && s.streamId !== streamId) return false;
       if (!q) return true;
       return s.name.toLowerCase().includes(q) || s.admissionNo.toLowerCase().includes(q);
-    });
+    }));
   }, [state.students, activeCurriculum, classId, streamId, searchQuery]);
 
   useEffect(() => {
@@ -91,7 +92,78 @@ export default function Reports() {
     return [...termExams].sort((a, b) => b.year - a.year || b.term - b.term)[0];
   }, [termExams]);
 
-  const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
+  const smsExam = useMemo(() => {
+    const termNum = selectedTerm === "all" ? undefined : Number(selectedTerm);
+    return [...state.exams]
+      .filter(e => e.curriculumId === activeCurriculum && e.status !== "draft" && (termNum === undefined || e.term === termNum))
+      .at(-1) ?? null;
+  }, [state.exams, activeCurriculum, selectedTerm]);
+
+  const latestMeans = useMemo(() => {
+    if (!latestExam) return new Map<ID, number>();
+    const means = new Map<ID, number>();
+    state.students
+      .filter(s => s.curriculumId === activeCurriculum)
+      .forEach(s => means.set(s.id, statsForStudentExam(state, s.id, latestExam.id).mean));
+    return means;
+  }, [state.students, state.sheets, state.entries, state.curricula, latestExam, activeCurriculum]);
+
+  const smsMeans = useMemo(() => {
+    if (!smsExam) return new Map<ID, number>();
+    const means = new Map<ID, number>();
+    state.students
+      .filter(s => s.curriculumId === activeCurriculum)
+      .forEach(s => means.set(s.id, statsForStudentExam(state, s.id, smsExam.id).mean));
+    return means;
+  }, [state.students, state.sheets, state.entries, state.curricula, smsExam, activeCurriculum]);
+
+  const latestStats = useMemo(() => student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null, [student, latestExam, state.students, state.sheets, state.entries, state.curricula]);
+  const smsStats = useMemo(() => student && smsExam ? statsForStudentExam(state, student.id, smsExam.id) : null, [student, smsExam, state.students, state.sheets, state.entries, state.curricula]);
+  const smsFilledRows = useMemo(() => (smsStats?.rows ?? []).filter(r => r.score != null), [smsStats]);
+
+  const streamPosition = useMemo(() => {
+    if (!student || !latestExam || !latestStats) return null;
+    const scores = state.students
+      .filter(s => s.streamId === student.streamId && s.curriculumId === activeCurriculum)
+      .map(s => ({ id: s.id, mean: latestMeans.get(s.id) ?? 0 }))
+      .filter(item => item.mean > 0)
+      .sort((a, b) => b.mean - a.mean);
+    const rank = scores.findIndex(item => item.id === student.id) + 1;
+    return { rank, total: scores.length };
+  }, [student, latestExam, latestStats, latestMeans, state.students, activeCurriculum]);
+
+  const overallPosition = useMemo(() => {
+    if (!student || !latestExam || !latestStats) return null;
+    const classStudents = state.students.filter(s => s.classId === student.classId && s.curriculumId === activeCurriculum);
+    const scores = classStudents
+      .map(s => ({ id: s.id, mean: latestMeans.get(s.id) ?? 0 }))
+      .filter(item => item.mean > 0)
+      .sort((a, b) => b.mean - a.mean);
+    const rank = scores.findIndex(item => item.id === student.id) + 1;
+    return { rank, total: classStudents.length };
+  }, [student, latestExam, latestStats, latestMeans, state.students, activeCurriculum]);
+
+  const smsStreamPosition = useMemo(() => {
+    if (!student || !smsExam || !smsStats) return null;
+    const scores = state.students
+      .filter(s => s.streamId === student.streamId && s.curriculumId === activeCurriculum)
+      .map(s => ({ id: s.id, mean: smsMeans.get(s.id) ?? 0 }))
+      .filter(item => item.mean > 0)
+      .sort((a, b) => b.mean - a.mean);
+    const rank = scores.findIndex(item => item.id === student.id) + 1;
+    return { rank, total: scores.length };
+  }, [student, smsExam, smsStats, smsMeans, state.students, activeCurriculum]);
+
+  const smsOverallPosition = useMemo(() => {
+    if (!student || !smsExam || !smsStats) return null;
+    const classStudents = state.students.filter(s => s.classId === student.classId && s.curriculumId === activeCurriculum);
+    const scores = classStudents
+      .map(s => ({ id: s.id, mean: smsMeans.get(s.id) ?? 0 }))
+      .filter(item => item.mean > 0)
+      .sort((a, b) => b.mean - a.mean);
+    const rank = scores.findIndex(item => item.id === student.id) + 1;
+    return { rank, total: classStudents.length };
+  }, [student, smsExam, smsStats, smsMeans, state.students, activeCurriculum]);
 
   const filledRows = useMemo(() => (latestStats?.rows ?? []).filter(r => r.score != null), [latestStats]);
 
@@ -182,10 +254,12 @@ export default function Reports() {
             createdAt: now,
           });
 
-          for (let st = 0; st < 28; st++) {
+          for (let st = 0; st < 6; st++) {
             const firstName = studentFirstNames[(studentCounter + st) % studentFirstNames.length];
             const lastName = studentLastNames[(studentCounter + st) % studentLastNames.length];
             const admNo = `844/${formName.replace(" ", "")}/${String(st + 1).padStart(3, "0")}`;
+            // Generate a realistic Kenyan phone number
+            const phoneNumber = `07${Math.floor(Math.random() * 90000000 + 10000000)}`;
             newStudents.push({
               id: `844_student_${studentCounter}`,
               curriculumId: "844",
@@ -195,6 +269,7 @@ export default function Reports() {
               admissionNo: admNo,
               kcpe: `${200 + Math.floor(Math.random() * 100)}`,
               vap: `${280 + Math.floor(Math.random() * 120)}`,
+              parentNumber: phoneNumber,
               createdAt: now,
             });
             studentCounter++;
@@ -309,36 +384,34 @@ export default function Reports() {
                 setTimeout(() => document.body.classList.remove("printing-report-card"), 100);
               }, 50);
             }}><Printer className="h-4 w-4 mr-1"/>Print</Button>
-            <Button size="sm" variant="default" disabled={!student || !latestExam || sendingSms || !(isPrincipal || isSeniorTeacher)} onClick={async () => {
-              if (!student || !latestExam || !latestStats) { toast.error("No student or exam selected"); return; }
+            <Button size="sm" variant="default" disabled={!student || !smsExam || sendingSms || !(isPrincipal || isSeniorTeacher)} onClick={async () => {
+              if (!student || !smsExam || !smsStats) { toast.error("No student or exam selected"); return; }
+              const parentNumber = student.parentNumber || student.guardianPhone || "";
+              if (!parentNumber.trim()) { toast.error("Student has no parent phone number"); return; }
               setSendingSms(true);
               try {
-                const res = await fetch("/api/sms/send-report", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
+                const data = await api.post<{ message?: string }>('/sms/send-report', {
                     studentId: student.id,
-                    examId: latestExam.id,
-                    rows: filledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
+                    examId: smsExam.id,
+                    parentNumber,
+                    student: {
+                      ...student,
+                      parentNumber,
+                    },
+                    exam: smsExam,
+                    streamPosition: smsStreamPosition,
+                    overallPosition: smsOverallPosition,
+                    rows: smsFilledRows.map(r => ({ subjectId: r.subjectId, subject: r.subject, score: r.score, grade: r.grade, remarks: r.teacherComment || "" })),
                     termStats: multiTermStats ? multiTermStats.rows.map(r => ({
                       subjectId: r.subjectId,
                       subject: r.subject,
                       terms: r.terms.map(t => ({ examId: t.examId, term: t.term, year: t.year, score: t.score, grade: t.grade, rank: t.rank, total: t.total, deviation: t.deviation })),
                     })) : [],
-                  }),
                 });
-                const text = await res.text();
-                if (!text) throw new Error("Empty response from server");
-                let data;
-                try {
-                  data = JSON.parse(text);
-                } catch {
-                  throw new Error(`Invalid JSON response: ${text}`);
-                }
-                if (!res.ok) throw new Error(data.message || "Failed to send SMS");
                 toast.success(data.message || "Report card SMS sent successfully");
               } catch (err: any) {
-                toast.error(err.message || "Failed to send SMS");
+                const msg = err?.message || err?.toString() || "Failed to send SMS";
+                toast.error(msg);
               } finally {
                 setSendingSms(false);
               }

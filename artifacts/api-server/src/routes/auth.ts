@@ -177,8 +177,8 @@ router.post("/signup", async (req, res) => {
         passwordHash,
         fullName: full_name || null,
         department: department || null,
-        approved,
-        roles: isFirst ? ["admin", "principal"] : [],
+        approved: true,
+        roles: isFirst ? ["admin", "principal"] : ["teacher"],
       });
 
       if (!isFirst && process.env.DEV_BYPASS_APPROVAL === "true") {
@@ -188,7 +188,7 @@ router.post("/signup", async (req, res) => {
       const token = makeToken(id);
       return res.status(201).json({
         token,
-        user: { id, email, full_name: full_name || null, department: department || null, approved },
+        user: { id, email, full_name: full_name || null, department: department || null, approved: true },
       });
     }
 
@@ -198,8 +198,8 @@ router.post("/signup", async (req, res) => {
       passwordHash: "supabase-managed",
       fullName: full_name || null,
       department: department || null,
-      approved,
-      roles: isFirst ? ["admin", "principal"] : [],
+      approved: true,
+      roles: isFirst ? ["admin", "principal"] : ["teacher"],
     });
 
     if (!isFirst && process.env.DEV_BYPASS_APPROVAL === "true") {
@@ -209,7 +209,7 @@ router.post("/signup", async (req, res) => {
     const token = makeToken(id);
     return res.status(201).json({
       token,
-      user: { id, email, full_name: full_name || null, department: department || null, approved },
+      user: { id, email, full_name: full_name || null, department: department || null, approved: true },
     });
   } catch (err) {
     console.error("[signup]", err);
@@ -254,13 +254,14 @@ router.post("/signin", async (req, res) => {
         if (!profile) return res.status(500).json({ message: "Internal server error" });
       }
 
-      if (!profile.approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+      if (!profile.approved) {
         await store.setApproval(profile.id, true);
+        profile.approved = true;
       }
 
       const currentRoles = await store.rolesForUser(profile.id);
-      if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
-        await store.assignRole(profile.id, "principal", "add");
+      if (currentRoles.length === 0) {
+        await store.assignRole(profile.id, "teacher", "add");
       }
 
       const token = makeToken(profile.id);
@@ -277,14 +278,14 @@ router.post("/signin", async (req, res) => {
       const ok = await bcrypt.compare(password, profile.passwordHash);
       if (!ok) return res.status(401).json({ message: "Invalid email or password" });
 
-      if (!profile.approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+      if (!profile.approved) {
         await store.setApproval(profile.id, true);
         profile.approved = true;
       }
 
       const currentRoles = await store.rolesForUser(profile.id);
-      if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
-        await store.assignRole(profile.id, "principal", "add");
+      if (currentRoles.length === 0) {
+        await store.assignRole(profile.id, "teacher", "add");
       }
 
       const token = makeToken(profile.id);
@@ -555,8 +556,8 @@ router.post("/supabase-callback", async (req, res) => {
         passwordHash: "supabase-managed",
         fullName: full_name || null,
         department: department || null,
-        approved: isFirst,
-        roles: isFirst ? ["admin", "principal"] : [],
+        approved: true,
+        roles: isFirst ? ["admin", "principal"] : ["teacher"],
       });
       profile = await store.getProfileById(supabaseUid);
       if (!profile) return res.status(500).json({ message: "Internal server error" });

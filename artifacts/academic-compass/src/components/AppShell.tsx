@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, UserSquare, ClipboardList,
   FileSpreadsheet, PencilLine, GitMerge, LineChart, Printer, Settings,
-  Wifi, WifiOff, RefreshCw, School, User, LogOut, CalendarDays, Menu, ChevronDown,
+  Wifi, WifiOff, RefreshCw, School, User, LogOut, CalendarDays, Menu, ChevronDown, Phone,
 } from "lucide-react";
 import { useState } from "react";
 import { useSchool } from "@/store/school";
@@ -19,13 +19,14 @@ import { toast } from "sonner";
 const NAV = [
   { to: "/",           label: "Dashboard",       icon: LayoutDashboard, end: true },
   { to: "/students",   label: "Students",         icon: Users },
+  { to: "/parent-contacts", label: "Parent Contacts", icon: Phone },
   { to: "/classes",    label: "Classes & Streams", icon: GraduationCap },
   { to: "/subjects",   label: "Subjects",         icon: BookOpen },
   { to: "/teachers",   label: "Teachers",         icon: UserSquare },
   { to: "/exams",      label: "Exams",            icon: ClipboardList },
   { to: "/sheets",     label: "Mark Sheets",      icon: FileSpreadsheet },
   { to: "/entry",      label: "Mark Entry",       icon: PencilLine },
-  { to: "/marks",      label: "Exam Marks",        icon: FileSpreadsheet },
+  { to: "/marks",      label: "Marks & Results",   icon: FileSpreadsheet },
   { to: "/timetable",  label: "Timetable",        icon: CalendarDays },
   { to: "/conflicts",  label: "Conflicts",        icon: GitMerge },
   { to: "/transcripts",label: "Transcripts",      icon: LineChart },
@@ -38,7 +39,7 @@ const FOOTER_LINKS = [
   { to: "/", label: "Home" },
   { to: "/sheets", label: "Mark Sheets" },
   { to: "/entry", label: "Mark Entry" },
-  { to: "/marks", label: "Exam Marks" },
+  { to: "/marks", label: "Marks & Results" },
   { to: "/reports", label: "Reports" },
   { to: "/students", label: "Students" },
   { to: "/timetable", label: "Timetable" },
@@ -47,6 +48,7 @@ const FOOTER_LINKS = [
 const PAGE_BG: Record<string, string> = {
   "/": "page-bg-dashboard",
   "/students": "page-bg-students",
+  "/parent-contacts": "page-bg-students",
   "/classes": "page-bg-classes",
   "/subjects": "page-bg-subjects",
   "/teachers": "page-bg-teachers",
@@ -66,7 +68,7 @@ const KEY_QUICK_LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/sheets", label: "Mark Sheets" },
   { to: "/entry", label: "Mark Entry" },
-  { to: "/marks", label: "Exam Marks" },
+  { to: "/marks", label: "Marks & Results" },
   { to: "/reports", label: "Reports" },
   { to: "/students", label: "Students" },
   { to: "/timetable", label: "Timetable" },
@@ -78,7 +80,7 @@ const MORE_LINKS = [
   { to: "/teachers", label: "Teachers", icon: UserSquare },
   { to: "/exams", label: "Exams", icon: ClipboardList },
   { to: "/sheets", label: "Mark Sheets", icon: FileSpreadsheet },
-  { to: "/marks", label: "Exam Marks", icon: FileSpreadsheet },
+  { to: "/marks", label: "Marks & Results", icon: FileSpreadsheet },
   { to: "/conflicts", label: "Conflicts", icon: GitMerge },
   { to: "/transcripts", label: "Transcripts", icon: LineChart },
   { to: "/settings", label: "Settings", icon: Settings },

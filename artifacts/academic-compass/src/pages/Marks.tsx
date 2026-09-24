@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { gradeFor } from "@/lib/schoolData";
+import { gradeFor, sortStudentsByAdmissionNo } from "@/lib/schoolData";
 import { Cloud, CloudOff, Download, Upload, Lock } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -64,7 +64,7 @@ export default function Marks() {
 
   const students = useMemo(() => {
     if (!streamId) return [];
-    return state.students.filter(s => s.streamId === streamId).sort((a, b) => a.name.localeCompare(b.name));
+    return sortStudentsByAdmissionNo(state.students.filter(s => s.streamId === streamId));
   }, [state.students, streamId]);
 
   const curriculum = state.curricula.find(c => c.id === activeCurriculum)!;

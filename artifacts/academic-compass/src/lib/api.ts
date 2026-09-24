@@ -33,6 +33,11 @@ async function request<T>(
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem("ac_token");
+        localStorage.removeItem("ac_user");
+        if (window.location.pathname !== "/auth") window.location.assign("/auth");
+      }
       const err = await res.json().catch(() => ({ message: res.statusText }));
       throw new Error(err.message ?? "Request failed");
     }

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { gradeFor, saveState, type SheetStatus, type ID, type CurriculumId } from "@/lib/schoolData";
+import { gradeFor, sortStudentsByAdmissionNo, type SheetStatus, type ID, type CurriculumId, saveState } from "@/lib/schoolData";
 import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { MarkEntry } from "@/lib/schoolData";
@@ -82,7 +82,7 @@ export default function MarkEntry() {
       : classStreams;
 
     streamsToShow.forEach(stream => {
-      const classStudents = state.students.filter(s => classFilter.includes(s.classId) && s.streamId === stream.id);
+      const classStudents = sortStudentsByAdmissionNo(state.students.filter(s => classFilter.includes(s.classId) && s.streamId === stream.id));
       if (classStudents.length === 0) return;
       groups.push({
         streamId: stream.id,
@@ -151,18 +151,24 @@ export default function MarkEntry() {
     }
   }, [examId, subjectId, totalStudents, subjectStreamGroups, getSheetFor, update]);
 
+  const entryLookup = useMemo(() => {
+    const lookup = new Map<string, MarkEntry>();
+    state.entries.forEach(e => lookup.set(`${e.sheetId}:${e.studentId}`, e));
+    return lookup;
+  }, [state.entries]);
+
   const pendingCount = useMemo(() => {
     let count = 0;
     subjectStreamGroups.forEach(group => {
       group.students.forEach(stu => {
         const sheet = getSheetFor(group.streamId);
         if (!sheet) return;
-        const e = state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id);
+        const e = entryLookup.get(`${sheet.id}:${stu.id}`);
         if (e?.pending) count++;
       });
     });
     return count;
-  }, [subjectStreamGroups, getSheetFor, state.entries]);
+  }, [subjectStreamGroups, getSheetFor, entryLookup]);
 
   const missingCount = useMemo(() => {
     let count = 0;
@@ -170,12 +176,12 @@ export default function MarkEntry() {
       group.students.forEach(stu => {
         const sheet = getSheetFor(group.streamId);
         if (!sheet) return;
-        const e = state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id);
+        const e = entryLookup.get(`${sheet.id}:${stu.id}`);
         if (e?.score == null) count++;
       });
     });
     return count;
-  }, [subjectStreamGroups, getSheetFor, state.entries]);
+  }, [subjectStreamGroups, getSheetFor, entryLookup]);
 
   const changeScore = (studentId: string, subjectId: string, raw: string) => {
     const stu = state.students.find(s => s.id === studentId);
@@ -188,7 +194,7 @@ export default function MarkEntry() {
     }
 
     if (raw === "") {
-      const existing = state.entries.find(e => e.sheetId === sheetForSubject.id && e.studentId === studentId);
+      const existing = entryLookup.get(`${sheetForSubject.id}:${studentId}`);
       if (existing) {
         update(s => {
           const e = s.entries.find(x => x.id === existing.id);
@@ -199,7 +205,6 @@ export default function MarkEntry() {
             e.pending = true;
           }
         });
-        saveState(stateRef.current);
       }
       return;
     }
@@ -680,7 +685,7 @@ export default function MarkEntry() {
     subjectStreamGroups.forEach(group => {
       group.students.forEach(stu => {
         const sheet = state.sheets.find(s => s.streamId === group.streamId && s.subjectId === subjectId && s.examId === examId);
-        const entry = sheet ? state.entries.find(e => e.sheetId === sheet.id && e.studentId === stu.id) : undefined;
+        const entry = sheet ? entryLookup.get(`${sheet.id}:${stu.id}`) : undefined;
         const score = entry?.score ?? "";
         rows.push(`${stu.admissionNo},"${stu.name}","${subject?.name || ""}","${exam?.name || ""}",${score}`);
       });
