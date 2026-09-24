@@ -442,30 +442,57 @@
     background: #fff !important;
   }
 
+  /* When printing class list, hide everything except the print container */
+  body.printing-class-list *:not(#class-list-print-root):not(#class-list-print-root *) {
+    visibility: hidden !important;
+  }
+
+  body.printing-class-list #class-list-print-root {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+  }
+
+  body.printing-class-list #class-list-print-root * {
+    visibility: visible !important;
+  }
+
+  /* When printing report card, hide everything except .a4-sheet */
+  body.printing-report-card *:not(.a4-sheet):not(.a4-sheet *) {
+    visibility: hidden !important;
+  }
+
+  body.printing-report-card .a4-sheet {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+    margin: 0 !important;
+  }
+
+  body.printing-report-card .a4-sheet * {
+    visibility: visible !important;
+  }
+
+  /* Always-hide non-print elements */
   .no-print {
     display: none !important;
   }
 
-  body * {
-    visibility: hidden;
-  }
-
-  .print-page,
-  .print-page * {
-    visibility: visible;
+  /* Hide dialogs */
+  [role="dialog"],
+  [data-state="open"] {
+    display: none !important;
   }
 
   .print-page {
-    position: absolute;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    box-shadow: none !important;
-    border: none !important;
-    max-width: none;
-    padding: 0 !important;
+    page-break-after: always;
+    page-break-inside: avoid;
   }
 
   .print-page table {
@@ -481,23 +508,53 @@
     margin: 0 !important;
     font-size: inherit;
   }
+}
 
-  .print-page header {
-    padding-bottom: 10px !important;
-    margin-bottom: 10px !important;
+/* Hide print-only content on screen */
+@media screen {
+  #class-list-print-root,
+  .print-only {
+    display: none !important;
   }
+}
 
-  .print-page section {
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-  }
+/* When printing the class list, hide everything else */
+body.printing-class-list *:not(#class-list-print-root):not(#class-list-print-root *) {
+  visibility: hidden !important;
+}
 
-  .print-page .h-36,
-  .print-page .h-48 {
-    height: 120px !important;
-  }
+body.printing-class-list #class-list-print-root {
+  display: block !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  background: #fff !important;
+  z-index: 99999 !important;
+}
+
+body.printing-class-list #class-list-print-root * {
+  visibility: visible !important;
+}
+
+/* When printing the report card, hide everything except .a4-sheet */
+body.printing-report-card *:not(.a4-sheet):not(.a4-sheet *) {
+  visibility: hidden !important;
+}
+
+body.printing-report-card .a4-sheet {
+  display: block !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  background: #fff !important;
+  z-index: 99999 !important;
+  margin: 0 !important;
+}
+
+body.printing-report-card .a4-sheet * {
+  visibility: visible !important;
 }
 
 @layer utilities {

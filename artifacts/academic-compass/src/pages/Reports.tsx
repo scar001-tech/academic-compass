@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { statsForStudentExam, statsForStudentAllTerms, type CurriculumId, type ID } from "@/lib/schoolData";
-import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare } from "lucide-react";
+import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare, PrinterCheck } from "lucide-react";
 import { toast } from "sonner";
 import ReportCard from "@/components/ReportCard";
 
@@ -20,15 +20,28 @@ export default function Reports() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sendingSms, setSendingSms] = useState(false);
 
+  const [classId,   setClassId]   = useState<string>("");
+  const [streamId,  setStreamId]  = useState<string>("");
+  const [studentId, setStudentId] = useState<string>(params.get("student") || "");
+  const [selectedTerm, setSelectedTerm] = useState<string>("all");
+
   const curricula = state.curricula;
 
   const exams   = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")
     .sort((a, b) => a.year - b.year || a.term - b.term);
   const classes = state.classes.filter(c => c.curriculumId === activeCurriculum);
 
-  const [classId,   setClassId]   = useState<string>("");
-  const [streamId,  setStreamId]  = useState<string>("");
-  const [studentId, setStudentId] = useState<string>(params.get("student") || "");
+  const termExams = useMemo(() => {
+    if (selectedTerm === "all") return exams;
+    const termNum = Number(selectedTerm);
+    return exams.filter(e => e.term === termNum);
+  }, [exams, selectedTerm]);
+
+  useEffect(() => {
+    if (state.settings.schoolName && state.settings.schoolName !== "DRUMVALE SENIOR SCHOOL") {
+      update(s => { s.settings.schoolName = "DRUMVALE SENIOR SCHOOL"; });
+    }
+  }, [state.settings.schoolName, update]);
 
   useEffect(() => {
     if (activeCurriculum && (!classId || !state.classes.some(c => c.id === classId && c.curriculumId === activeCurriculum))) {
@@ -74,9 +87,9 @@ export default function Reports() {
   const classTeacher   = cls ? state.teachers.find(t => t.id === cls.classTeacherId) : null;
 
   const latestExam = useMemo(() => {
-    if (!exams.length) return null;
-    return [...exams].sort((a, b) => b.year - a.year || b.term - a.term)[0];
-  }, [exams]);
+    if (!termExams.length) return null;
+    return [...termExams].sort((a, b) => b.year - a.year || b.term - b.term)[0];
+  }, [termExams]);
 
   const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
 
@@ -257,16 +270,14 @@ export default function Reports() {
         });
       });
 
-      if (!s.settings.schoolName) {
-        s.settings = {
-          ...s.settings,
-          schoolName: "HIGHWAY SECONDARY SCHOOL",
-          address: "P.O BOX 1234, NAIROBI",
-          academicYear: 2024,
-          classTeacherRemarkTemplate: "Continue working hard.",
-          principalRemarkTemplate: "Keep up the good work.",
-        };
-      }
+      s.settings = {
+        ...s.settings,
+        schoolName: "DRUMVALE SENIOR SCHOOL",
+        address: "P.O BOX 1234, NAIROBI",
+        academicYear: new Date().getFullYear(),
+        classTeacherRemarkTemplate: "Continue working hard.",
+        principalRemarkTemplate: "Keep up the good work.",
+      };
 
       s.teachers.push(...newTeachers);
       s.subjects.push(...newSubjects);
@@ -291,7 +302,13 @@ export default function Reports() {
           <div className="flex gap-1 no-print">
             <Button size="sm" variant="outline" onClick={() => navigate(-1)}><ChevronLeft className="h-4 w-4"/></Button>
             <Button size="sm" variant="outline" onClick={() => navigate(1)}><ChevronRight className="h-4 w-4"/></Button>
-            <Button size="sm" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1"/>Print</Button>
+            <Button size="sm" onClick={() => {
+              document.body.classList.add("printing-report-card");
+              setTimeout(() => {
+                window.print();
+                setTimeout(() => document.body.classList.remove("printing-report-card"), 100);
+              }, 50);
+            }}><Printer className="h-4 w-4 mr-1"/>Print</Button>
             <Button size="sm" variant="default" disabled={!student || !latestExam || sendingSms || !(isPrincipal || isSeniorTeacher)} onClick={async () => {
               if (!student || !latestExam || !latestStats) { toast.error("No student or exam selected"); return; }
               setSendingSms(true);
@@ -310,7 +327,14 @@ export default function Reports() {
                     })) : [],
                   }),
                 });
-                const data = await res.json();
+                const text = await res.text();
+                if (!text) throw new Error("Empty response from server");
+                let data;
+                try {
+                  data = JSON.parse(text);
+                } catch {
+                  throw new Error(`Invalid JSON response: ${text}`);
+                }
                 if (!res.ok) throw new Error(data.message || "Failed to send SMS");
                 toast.success(data.message || "Report card SMS sent successfully");
               } catch (err: any) {
@@ -376,6 +400,50 @@ export default function Reports() {
               Latest exam: <span className="font-semibold ml-1">{latestExam.name} · T{latestExam.term} · {latestExam.year}</span>
             </div>
           )}
+          <Select value={selectedTerm} onValueChange={setSelectedTerm}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Term"/></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All terms</SelectItem>
+              <SelectItem value="1">Term 1</SelectItem>
+              <SelectItem value="2">Term 2</SelectItem>
+              <SelectItem value="3">Term 3</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" onClick={() => {
+            const termLabel = selectedTerm === "all" ? "all terms" : `Term ${selectedTerm}`;
+            const studentsToPrint = selectedTerm === "all" ? filteredStudents : filteredStudents.filter(s => {
+              const studentExams = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft" && e.term === Number(selectedTerm));
+              return studentExams.length > 0;
+            });
+            if (studentsToPrint.length === 0) {
+              toast.error(`No students with exams for ${termLabel}`);
+              return;
+            }
+            toast.info(`Preparing to print ${studentsToPrint.length} report forms for ${termLabel}...`);
+            let printed = 0;
+            const printNext = () => {
+              if (printed >= studentsToPrint.length) {
+                toast.success(`Printed ${printed} report forms for ${termLabel}`);
+                return;
+              }
+              const stu = studentsToPrint[printed];
+              setStudentId(stu.id);
+              setTimeout(() => {
+                document.body.classList.add("printing-report-card");
+                setTimeout(() => {
+                  window.print();
+                  setTimeout(() => {
+                    document.body.classList.remove("printing-report-card");
+                    printed++;
+                    printNext();
+                  }, 200);
+                }, 50);
+              }, 100);
+            };
+            printNext();
+          }}>
+            <PrinterCheck className="h-4 w-4 mr-1"/>Print All
+          </Button>
         </div>
       </Card>
 
@@ -390,7 +458,7 @@ export default function Reports() {
           <div className="text-sm">Create an exam and enter marks to generate report cards.</div>
         </Card>
       ) : (
-        <ReportCard studentId={studentId} activeCurriculum={activeCurriculum} />
+        <ReportCard studentId={studentId} activeCurriculum={activeCurriculum} selectedTerm={selectedTerm === "all" ? undefined : Number(selectedTerm)} />
       )}
     </div>
   );

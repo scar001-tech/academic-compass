@@ -8,6 +8,7 @@ import {
   type ID,
 } from "@/lib/schoolData";
 import { Textarea } from "@/components/ui/textarea";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const BLUE = "#2E86C1";
 const GREEN = "#1E8449";
@@ -17,9 +18,10 @@ export interface ReportCardProps {
   studentId: ID;
   activeCurriculum: CurriculumId;
   printMode?: boolean;
+  selectedTerm?: number;
 }
 
-export default function ReportCard({ studentId, activeCurriculum, printMode = false }: ReportCardProps) {
+export default function ReportCard({ studentId, activeCurriculum, printMode = false, selectedTerm }: ReportCardProps) {
   const { state, update } = useSchool();
   const { isPrincipal, canManageStudents, isTeacher, isSeniorTeacher } = useAuth();
   const canComment = isPrincipal || isSeniorTeacher || isTeacher;
@@ -30,13 +32,35 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
   const classTeacher = cls ? state.teachers.find(t => t.id === cls.classTeacherId) : null;
 
   const exams = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")
-    .sort((a, b) => b.year - a.year || b.term - a.term);
+    .filter(e => selectedTerm === undefined || e.term === selectedTerm)
+    .sort((a, b) => a.year - b.year || a.term - b.term);
 
-  const latestExam = useMemo(() => exams[0] ?? null, [exams]);
+  const latestExam = useMemo(() => exams[exams.length - 1] ?? null, [exams]);
+
+  const examLabel = (exam: ID | undefined, index: number) => {
+    if (!exam) return "";
+    const pos = exams.findIndex(e => e.id === exam);
+    if (activeCurriculum === "844") {
+      if (pos === 0) return "Assessment 1";
+      if (pos === 1) return "Assessment 2";
+      if (pos === 2) return "End-term Exam";
+      return `Exam ${pos + 1}`;
+    }
+    if (pos === 0) return "Opener Exam";
+    if (pos === 1) return "Mid-term Exam";
+    if (pos === 2) return "End-term Exam";
+    return `Exam ${pos + 1}`;
+  };
 
   const latestStats = student && latestExam ? statsForStudentExam(state, student.id, latestExam.id) : null;
   const filledRows = useMemo(() => (latestStats?.rows ?? []).filter(r => r.score != null), [latestStats]);
-  const multiTermStats = student ? statsForStudentAllTerms(state, student.id) : null;
+  const is844 = activeCurriculum === "844";
+  const isCbcLike = activeCurriculum === "cbc" || cls?.name.toLowerCase().includes("form 3") || cls?.name.toLowerCase().includes("form 4") || cls?.name.toLowerCase().includes("grade 10");
+  const isTerm2 = selectedTerm === 2;
+
+  const maxExams = isCbcLike || (is844 && isTerm2) ? 2 : 999;
+
+  const multiTermStats = student ? statsForStudentAllTerms(state, student.id, selectedTerm, maxExams) : null;
 
   const streamPosition = useMemo(() => {
     if (!student || !latestExam || !latestStats) return null;
@@ -61,23 +85,24 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
     });
     scores.sort((a, b) => b.mean - a.mean);
     const rank = scores.findIndex(s => s.id === student.id) + 1;
-    return { rank, total: scores.length };
+    return { rank, total: classStudents.length };
   }, [student, latestExam, state, activeCurriculum]);
 
   const performanceTrend = useMemo(() => {
-    if (!student || !exams.length || !cls) return [];
-    return exams.map(ex => {
-      const st = statsForStudentExam(state, student.id, ex.id);
-      const formNum = cls.name.match(/\d+/)?.[0] || "?";
-      return {
-        name: `F${formNum}T${ex.term}`,
-        full: `${ex.name} T${ex.term} ${ex.year}`,
-        mean: Math.round(st.mean * 10) / 10,
-        year: ex.year,
-        term: ex.term,
-      };
-    });
-  }, [student, exams, state, cls]);
+    if (!student || !latestExam) return [];
+    const subjects = state.subjects.filter(s => s.curriculumId === activeCurriculum);
+    const entries = subjects
+      .map(sub => {
+        const sheet = state.sheets.find(s => s.examId === latestExam.id && s.subjectId === sub.id && s.streamId === student.streamId);
+        const entry = sheet ? state.entries.find(e => e.sheetId === sheet.id && e.studentId === student.id) : undefined;
+        return { subject: sub.name, score: entry?.score ?? null };
+      })
+      .filter(item => item.score != null);
+    return entries.map(item => ({
+      name: item.subject,
+      mean: Math.round((item.score as number) * 10) / 10,
+    }));
+  }, [student, latestExam, state, activeCurriculum]);
 
   const classRemark = latestExam ? state.classRemarks.find(r => r.studentId === studentId && r.examId === latestExam.id) : null;
   const principalRemark = latestExam ? state.principalRemarks.find(r => r.studentId === studentId && r.examId === latestExam.id) : null;
@@ -111,19 +136,23 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
               <div className="h-16 w-16 rounded bg-white/20 flex items-center justify-center text-white font-bold text-xs border border-white/30 overflow-hidden">
-                <span className="text-[10px] text-center leading-tight">SCHOOL<br/>LOGO</span>
+                {state.settings.logoUrl ? (
+                  <img src={state.settings.logoUrl} alt="School logo" className="h-full w-full object-contain" />
+                ) : (
+                  <img src="/assets/school_logo.jpg" alt="School logo" className="h-full w-full object-contain" />
+                )}
               </div>
               <div>
-                <div className="font-bold text-xl md:text-2xl leading-tight">{state.settings.schoolName || "HIGHWAY SECONDARY SCHOOL"}</div>
+                <div className="font-bold text-xl md:text-2xl leading-tight">{state.settings.schoolName || "DRUMVALE SENIOR SCHOOL"}</div>
                 <div className="text-sm text-white/90 leading-tight mt-1">{state.settings.address || "P.O BOX 1234, NAIROBI"}</div>
                 <div className="text-sm text-white/90 mt-1">PHONE: 0704921291 | EMAIL: info@drumvalesecondary.sc.ke</div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-sm font-semibold uppercase tracking-wide text-white/90">Academic Report Form</div>
-              <div className="text-lg font-bold">{cls?.name || "FORM"} — END OF TERM EXAMS</div>
-              <div className="text-base">({latestExam.year} — TERM {latestExam.term})</div>
-            </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold uppercase tracking-wide text-white/90">Academic Report Form</div>
+                <div className="text-lg font-bold">{cls?.name || "FORM"} — {latestExam ? examLabel(latestExam.id, exams.findIndex(e => e.id === latestExam.id)) : ""}</div>
+                <div className="text-base">({latestExam?.year} — TERM {latestExam?.term})</div>
+              </div>
           </div>
         </div>
       </header>
@@ -135,20 +164,6 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
           onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) x.admissionNo = v; })}/>
         <Field label="Form / Class" value={cls?.name || ""} disabled/>
         <Field label="Stream" value={str?.name || ""} disabled/>
-        <Field label="KCPE Index" value={(student as any).kcpe || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).kcpe = v; })}/>
-        <Field label="VAP" value={student.vap} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) x.vap = v; })}/>
-        <Field label="Religion" value={(student as any).religion || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).religion = v; })}/>
-        <Field label="Date of Birth" value={(student as any).dateOfBirth || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).dateOfBirth = v; })}/>
-        <Field label="Adm. Date" value={(student as any).dateOfAdmission || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).dateOfAdmission = v; })}/>
-        <Field label="House" value={(student as any).house || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).house = v; })}/>
-        <Field label="Grade Entry" value={(student as any).gradeEntryType || ""} disabled={!canManageStudents || printMode}
-          onChange={(v) => update(s => { const x = s.students.find(x => x.id === student.id); if (x) (x as any).gradeEntryType = v; })}/>
       </section>
 
       <section className="grid grid-cols-5 gap-2 py-2 border-b">
@@ -159,6 +174,23 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
         <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
       </section>
 
+      {performanceTrend.length > 0 && (
+        <section className="py-2 border-b">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Performance Trend</div>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={performanceTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                <YAxis domain={[0, 100]} stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                <Line type="monotone" dataKey="mean" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      )}
+
       {multiTermStats && (
         <section className="py-2 border-b overflow-x-auto">
           <table className="w-full text-[11px] border border-black" style={{ minWidth: 720 }}>
@@ -168,7 +200,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
                 <th className="text-left p-1.5 border border-black/30">SUBJECTS</th>
                 {multiTermStats?.terms.map((t) => (
                   <th key={t.examId} className="text-center p-1.5 border border-black/30" colSpan={4}>
-                    T{t.term} {t.year}
+                    {examLabel(t.examId, exams.findIndex(e => e.id === t.examId))}
                   </th>
                 ))}
                 <th className="text-left p-1.5 border border-black/30">COMMENT</th>
@@ -227,7 +259,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
         </section>
       )}
 
-      <section className="grid grid-cols-2 gap-4 py-2">
+      <section className="grid grid-cols-1 gap-4 py-2">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Class Teacher's Remarks</div>
           <Textarea className="text-xs min-h-[50px] print:min-h-[40px] resize-none" defaultValue={classRemark?.remark || state.settings.classTeacherRemarkTemplate}
@@ -238,17 +270,26 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
             <div className="h-8"></div>
           </div>
         </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 py-2">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Principal's Remarks</div>
-          <Textarea className="text-xs min-h-[50px] print:min-h-[40px] resize-none" defaultValue={principalRemark?.remark || state.settings.principalRemarkTemplate}
+          <Textarea className="text-xs min-h-[50px] print:min-h-[40px] resize-none" defaultValue={principalRemark?.remark || "You can do better. Exploit your potential."}
             disabled={!isPrincipal || printMode}
             onBlur={updatePrincipalRemark}/>
-          <div className="mt-4 border-t pt-1 text-[10px] text-muted-foreground flex items-start gap-2">
-            <div className="flex-1">
-              <div className="font-semibold">Chief Principal Signature</div>
-              <div className="h-8"></div>
-            </div>
-            <div className="w-16 h-16 border-2 border-dashed rounded flex items-center justify-center text-[9px] text-muted-foreground">
+          <div className="mt-4 border-t pt-1 text-[10px] text-muted-foreground">
+            <div className="font-semibold">Principal's Signature</div>
+            <div className="h-8"></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 py-2">
+        <div className="flex items-start gap-4">
+          <div className="flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Stamp</div>
+            <div className="w-24 h-24 border-2 border-dashed rounded flex items-center justify-center text-[9px] text-muted-foreground">
               STAMP
             </div>
           </div>

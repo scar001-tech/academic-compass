@@ -186,6 +186,7 @@ export interface SchoolSettings {
   academicYear: number;
   classTeacherRemarkTemplate: string;
   principalRemarkTemplate: string;
+  logoUrl?: string;
 }
 
 export interface AppState {
@@ -303,6 +304,7 @@ function seed(): AppState {
       academicYear: new Date().getFullYear(),
       classTeacherRemarkTemplate: "",
       principalRemarkTemplate: "",
+      logoUrl: "",
     },
     curricula: [
       { id: "cbc", name: "CBC / Junior School", shortName: "CBC", description: "Competency-Based Curriculum", gradingScale: cbcScale },
@@ -351,6 +353,7 @@ function emptyState(): AppState {
       academicYear: new Date().getFullYear(),
       classTeacherRemarkTemplate: "",
       principalRemarkTemplate: "",
+      logoUrl: "",
     },
     curricula: [
       { id: "cbc", name: "CBC / Junior School", shortName: "CBC", description: "Competency-Based Curriculum", gradingScale: cbcScale },
@@ -512,39 +515,70 @@ export interface TermSubjectStat {
 }
 
 export function statsForStudentAllTerms(
-  state: AppState, studentId: ID,
+  state: AppState, studentId: ID, selectedTerm?: number, maxExams: number = 2,
 ): { rows: TermSubjectStat[]; terms: Array<{ examId: ID; term: number; year: number; name: string }> } {
   const student = state.students.find(s => s.id === studentId)!;
   const curriculum = state.curricula.find(c => c.id === student.curriculumId)!;
   const exams = state.exams
     .filter(e => e.curriculumId === student.curriculumId && e.status !== "draft")
+    .filter(e => selectedTerm === undefined || e.term === selectedTerm)
     .sort((a, b) => a.year - b.year || a.term - b.term);
   const subjects = state.subjects.filter(s => s.curriculumId === student.curriculumId);
   const termList = exams.map(e => ({ examId: e.id, term: e.term, year: e.year, name: e.name }));
   const rows: TermSubjectStat[] = [];
 
+  const lastTwoExams = maxExams >= 999 ? exams.slice(-2) : exams.slice(0, maxExams);
+  const currentExam = lastTwoExams[lastTwoExams.length - 1];
+  const previousExam = lastTwoExams.length >= 2 ? lastTwoExams[0] : null;
+
   subjects.forEach((sub) => {
     const terms: TermSubjectStat["terms"] = [];
-    exams.forEach((exam) => {
-      const sheet = state.sheets.find(s => s.examId === exam.id && s.subjectId === sub.id && s.streamId === student.streamId);
-      if (!sheet) return;
-      const entry = state.entries.find(e => e.sheetId === sheet.id && e.studentId === studentId);
-      const score = entry?.score ?? null;
-      const gb = gradeFor(score, curriculum.gradingScale);
-      const grade = entry?.overrideGrade || gb?.grade || "—";
-      const allEntries = state.entries.filter(e => e.sheetId === sheet.id && e.score != null);
-      const sorted = [...allEntries].sort((a, b) => (b.score! - a.score!));
-      const rank = score != null ? sorted.findIndex(e => e.studentId === studentId) + 1 : 0;
-      const mean = sorted.length ? sorted.reduce((a, b) => a + (b.score ?? 0), 0) / sorted.length : 0;
-      const deviation = score != null ? Math.round((score - mean) * 10) / 10 : 0;
-      terms.push({ examId: exam.id, term: exam.term, year: exam.year, score, grade, rank, total: sorted.length, deviation });
-    });
+    if (previousExam) {
+      const sheet = state.sheets.find(s => s.examId === previousExam.id && s.subjectId === sub.id && s.streamId === student.streamId);
+      if (sheet) {
+        const entry = state.entries.find(e => e.sheetId === sheet.id && e.studentId === studentId);
+        const score = entry?.score ?? null;
+        const gb = gradeFor(score, curriculum.gradingScale);
+        const grade = entry?.overrideGrade || gb?.grade || "—";
+        const allEntries = state.entries.filter(e => e.sheetId === sheet.id && e.score != null);
+        const sorted = [...allEntries].sort((a, b) => (b.score! - a.score!));
+        const rank = score != null ? sorted.findIndex(e => e.studentId === studentId) + 1 : 0;
+        const mean = sorted.length ? sorted.reduce((a, b) => a + (b.score ?? 0), 0) / sorted.length : 0;
+        const deviation = score != null ? Math.round((score - mean) * 10) / 10 : 0;
+        terms.push({ examId: previousExam.id, term: previousExam.term, year: previousExam.year, score, grade, rank, total: sorted.length, deviation });
+      }
+    }
+    if (currentExam) {
+      const sheet = state.sheets.find(s => s.examId === currentExam.id && s.subjectId === sub.id && s.streamId === student.streamId);
+      if (sheet) {
+        const entry = state.entries.find(e => e.sheetId === sheet.id && e.studentId === studentId);
+        const score = entry?.score ?? null;
+        const gb = gradeFor(score, curriculum.gradingScale);
+        const grade = entry?.overrideGrade || gb?.grade || "—";
+        const allEntries = state.entries.filter(e => e.sheetId === sheet.id && e.score != null);
+        const sorted = [...allEntries].sort((a, b) => (b.score! - a.score!));
+        const rank = score != null ? sorted.findIndex(e => e.studentId === studentId) + 1 : 0;
+        const mean = sorted.length ? sorted.reduce((a, b) => a + (b.score ?? 0), 0) / sorted.length : 0;
+        const deviation = score != null ? Math.round((score - mean) * 10) / 10 : 0;
+        terms.push({ examId: currentExam.id, term: currentExam.term, year: currentExam.year, score, grade, rank, total: sorted.length, deviation });
+      }
+    }
     if (terms.length) {
-      rows.push({ subjectId: sub.id, subject: sub.name, terms: terms.slice(0, 2) });
+      rows.push({ subjectId: sub.id, subject: sub.name, terms });
     }
   });
 
-  return { rows, terms: termList.slice(0, 2) };
+  const displayTerms = [];
+  if (previousExam) {
+    displayTerms.push({ examId: previousExam.id, term: previousExam.term, year: previousExam.year, name: "Opener Exam" });
+  }
+  if (currentExam) {
+    const pos = exams.findIndex(e => e.id === currentExam.id);
+    const label = pos === 0 ? "Opener Exam" : pos === 1 ? "Mid-term Exam" : pos === 2 ? "End-term Exam" : `Exam ${pos + 1}`;
+    displayTerms.push({ examId: currentExam.id, term: currentExam.term, year: currentExam.year, name: label });
+  }
+
+  return { rows, terms: displayTerms.slice(-maxExams) };
 }
 
 export function identifyWeakAreas(

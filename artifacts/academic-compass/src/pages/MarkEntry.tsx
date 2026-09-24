@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { gradeFor, saveState, type SheetStatus, type ID, type CurriculumId } from "@/lib/schoolData";
-import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, Save, Lock, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { MarkEntry } from "@/lib/schoolData";
 import * as XLSX from "xlsx";
@@ -47,6 +47,11 @@ export default function MarkEntry() {
   const [subjectId, setSubjectId] = useState<string>(preSheetObj?.subjectId || "");
   const [examId, setExamId]       = useState<string>(preSheetObj?.examId || "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setDrafts({});
+  }, [examId, subjectId]);
+
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
@@ -233,9 +238,6 @@ export default function MarkEntry() {
     });
 
     saveState(stateRef.current);
-    if (stateRef.current.online) {
-      syncNow().catch(() => {});
-    }
   };
 
   const parseImportCsv = (raw: string): Array<{ admissionNo: string; score: number | null }> => {
@@ -666,6 +668,36 @@ export default function MarkEntry() {
     }
   };
 
+  const exportMarks = () => {
+    if (!subjectId || !examId) {
+      toast.error("Select a subject and exam first");
+      return;
+    }
+    const exam = state.exams.find(e => e.id === examId);
+    const subject = state.subjects.find(s => s.id === subjectId);
+    const rows: string[] = [];
+    rows.push("Admission No,Student Name,Subject,Exam,Score");
+    subjectStreamGroups.forEach(group => {
+      group.students.forEach(stu => {
+        const sheet = state.sheets.find(s => s.streamId === group.streamId && s.subjectId === subjectId && s.examId === examId);
+        const entry = sheet ? state.entries.find(e => e.sheetId === sheet.id && e.studentId === stu.id) : undefined;
+        const score = entry?.score ?? "";
+        rows.push(`${stu.admissionNo},"${stu.name}","${subject?.name || ""}","${exam?.name || ""}",${score}`);
+      });
+    });
+    const csvContent = rows.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `marks_${subject?.name || "export"}_${exam?.name || ""}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${subjectStreamGroups.reduce((sum, g) => sum + g.students.length, 0)} marks`);
+  };
+
   return (
     <div>
       <PageHeader
@@ -714,6 +746,9 @@ export default function MarkEntry() {
               <Button variant="outline" size="sm" disabled={!subjectId || !examId} onClick={() => fileInputRef.current?.click()}>
                 <Upload className="h-4 w-4 mr-1"/>Import marks
               </Button>
+              <Button variant="outline" size="sm" disabled={!subjectId || !examId} onClick={exportMarks}>
+                <Download className="h-4 w-4 mr-1"/>Export marks
+              </Button>
             </div>
           </div>
         </div>
@@ -752,9 +787,10 @@ export default function MarkEntry() {
                     <tbody>
                       {group.students.map((stu, i) => {
                         const e = sheet ? state.entries.find(x => x.sheetId === sheet.id && x.studentId === stu.id) : undefined;
-                        const gb = gradeFor(e?.score ?? null, curriculum.gradingScale);
-                        const key = `${stu.id}_${subjectId}`;
+                        const key = `${stu.id}_${subjectId}_${examId}`;
                         const draft = drafts[key] ?? String(e?.score ?? "");
+                        const draftScore = draft === "" ? null : Number(draft);
+                        const gb = gradeFor(!Number.isNaN(draftScore) ? draftScore : null, curriculum.gradingScale);
                         return (
                           <tr key={stu.id}>
                             <td className="text-muted-foreground">{i+1}</td>
@@ -766,10 +802,10 @@ export default function MarkEntry() {
                                 className="h-9 w-24"
                                 disabled={!canEnterMarks}
                                 value={draft}
-                                onChange={(ev) => setDrafts((prev) => ({ ...prev, [key]: ev.target.value }))}
-                                onBlur={(ev) => {
-                                  changeScore(stu.id, subjectId!, ev.target.value);
-                                  setDrafts((prev) => ({ ...prev, [key]: String(e?.score ?? "") }));
+                                onChange={(ev) => {
+                                  const val = ev.target.value;
+                                  setDrafts((prev) => ({ ...prev, [key]: val }));
+                                  changeScore(stu.id, subjectId!, val);
                                 }}
                                 onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
                               />

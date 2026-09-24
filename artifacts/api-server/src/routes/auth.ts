@@ -147,9 +147,13 @@ router.post("/signup", async (req, res) => {
     if (existing) return res.status(409).json({ message: "Email already registered" });
 
     const isFirst = !(await store.hasAnyProfile());
-    const approved = isFirst;
+    let approved = isFirst;
     const supabaseAvailable = await isSupabaseAvailable();
     let id: string;
+
+    if (!approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+      approved = true;
+    }
 
     if (supabaseAvailable) {
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -177,6 +181,10 @@ router.post("/signup", async (req, res) => {
         roles: isFirst ? ["admin", "principal"] : [],
       });
 
+      if (!isFirst && process.env.DEV_BYPASS_APPROVAL === "true") {
+        await store.assignRole(id, "principal", "add");
+      }
+
       const token = makeToken(id);
       return res.status(201).json({
         token,
@@ -193,6 +201,10 @@ router.post("/signup", async (req, res) => {
       approved,
       roles: isFirst ? ["admin", "principal"] : [],
     });
+
+    if (!isFirst && process.env.DEV_BYPASS_APPROVAL === "true") {
+      await store.assignRole(id, "principal", "add");
+    }
 
     const token = makeToken(id);
     return res.status(201).json({
@@ -248,7 +260,7 @@ router.post("/signin", async (req, res) => {
 
       const currentRoles = await store.rolesForUser(profile.id);
       if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
-        await store.assignRole(profile.id, "teacher", "add");
+        await store.assignRole(profile.id, "principal", "add");
       }
 
       const token = makeToken(profile.id);
@@ -272,7 +284,7 @@ router.post("/signin", async (req, res) => {
 
       const currentRoles = await store.rolesForUser(profile.id);
       if (currentRoles.length === 0 && process.env.DEV_BYPASS_APPROVAL === "true") {
-        await store.assignRole(profile.id, "teacher", "add");
+        await store.assignRole(profile.id, "principal", "add");
       }
 
       const token = makeToken(profile.id);

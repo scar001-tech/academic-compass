@@ -48,6 +48,24 @@ export default function SettingsPage() {
             <label className="text-xs text-muted-foreground">Academic year</label>
             <Input type="number" value={state.settings.academicYear} onChange={(e) => update(s => { s.settings.academicYear = Number(e.target.value); })}/>
           </div>
+          <div>
+            <label className="text-xs text-muted-foreground">School logo</label>
+             <input type="file" accept="image/png,image/jpeg,image/webp" className="text-xs" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                update(s => { s.settings.logoUrl = reader.result as string; });
+              };
+              reader.readAsDataURL(file);
+            }}/>
+            {state.settings.logoUrl && (
+              <div className="mt-2">
+                <img src={state.settings.logoUrl} alt="Logo preview" className="h-12 w-12 object-contain border rounded"/>
+                <Button variant="ghost" size="sm" className="ml-2" onClick={() => update(s => { s.settings.logoUrl = ""; })}>Remove</Button>
+              </div>
+            )}
+          </div>
         </Card>
 
         <Card className="p-3 md:p-4 space-y-3">

@@ -43,10 +43,30 @@ router.post("/send-report", authenticateJWT, requireRoles("admin", "principal", 
 
     const scores = enrichedRows.map(r => r.score).filter((s: any) => typeof s === "number") as number[];
     const mean = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
+    // Calculate stream position
+    const streamStudents = (schoolData.students || []).filter((s: any) => s.streamId === student.streamId && s.curriculumId === student.curriculumId);
+    const streamScores = streamStudents.map((s: any) => {
+      const ss = enrichedRows.map(r => r.score).filter((sc: any) => typeof sc === "number") as number[];
+      return ss.length ? ss.reduce((a, b) => a + b, 0) / ss.length : 0;
+    }).filter((m: any) => m > 0);
+    streamScores.sort((a: any, b: any) => b - a);
+    const streamPosition = streamScores.length ? streamScores.findIndex((m: any) => Math.abs(m - mean) < 0.1) + 1 : 0;
+
+    // Calculate overall position (class level)
+    const classStudents = (schoolData.students || []).filter((s: any) => s.classId === student.classId && s.curriculumId === student.curriculumId);
+    const classScores = classStudents.map((s: any) => {
+      const ss = enrichedRows.map(r => r.score).filter((sc: any) => typeof sc === "number") as number[];
+      return ss.length ? ss.reduce((a, b) => a + b, 0) / ss.length : 0;
+    }).filter((m: any) => m > 0);
+    classScores.sort((a: any, b: any) => b - a);
+    const overallPosition = classScores.length ? classScores.findIndex((m: any) => Math.abs(m - mean) < 0.1) + 1 : 0;
+
     const stats = {
       mean,
       overallGrade: mean >= 80 ? "A" : mean >= 60 ? "B" : mean >= 40 ? "C" : "D",
-      streamPosition: "—",
+      streamPosition: streamPosition || "—",
+      overallPosition: overallPosition || "—",
       totalPoints: 0,
     };
 
@@ -75,17 +95,27 @@ router.post("/send-report", authenticateJWT, requireRoles("admin", "principal", 
     const pdfBlob = generateStudentReportPdf(student, exam, enrichedRows, stats, classTeacher, "", termStats);
 
     const config = {
-      provider: (process.env.SMS_PROVIDER || "custom") as SmsConfig["provider"],
+      provider: "safravo" as SmsConfig["provider"],
       apiKey: process.env.SMS_API_KEY,
-      username: process.env.SMS_USERNAME,
-      senderId: process.env.SMS_SENDER_ID || "0704921291",
-      accountSid: process.env.SMS_ACCOUNT_SID,
-      authToken: process.env.SMS_AUTH_TOKEN,
-      from: process.env.SMS_FROM || "0704921291",
-      baseUrl: process.env.SMS_BASE_URL,
+      senderId: "DrumvaleSec",
+      baseUrl: "https://api.safravo.co.ke",
     };
 
-    const message = `Dear Parent, ${student.name} (${student.admissionNo}) scored ${stats.overallGrade} in ${exam.name} Term ${exam.term} ${exam.year}. Mean: ${stats.mean.toFixed(1)}.`;
+    const subjectBreakdown = enrichedRows
+      .filter(r => r.score != null)
+      .map(r => `${r.subject}: ${r.score} (${r.grade})`)
+      .join("; ");
+
+    const principalRemark = (schoolData.principalRemarks || []).find((r: any) => r.studentId === student.id && r.examId === exam.id)?.remark || "";
+
+    const message = `Dear Parent/Guardian,
+Report Card: ${student.name} (Adm: ${student.admissionNo}) - ${exam.name} ${exam.year}
+SUBJECT PERFORMANCE:
+${subjectBreakdown}
+SUMMARY:
+Total Marks: ${scores.reduce((a: number, b: number) => a + b, 0)} | Mean Grade: ${stats.overallGrade}
+Stream Pos: ${stats.streamPosition} | Overall Pos: ${stats.overallPosition || "—"}
+Remarks: ${principalRemark || "You can do better. Exploit your potential."}`;
 
     let result: SmsResult = { success: false, error: "No SMS provider configured" };
     if (config.baseUrl || config.apiKey || config.accountSid) {

@@ -1,4 +1,4 @@
-export type SmsProvider = "africastalking" | "twilio" | "custom";
+export type SmsProvider = "africastalking" | "twilio" | "custom" | "safravo";
 
 export interface SmsConfig {
   provider: SmsProvider;
@@ -29,6 +29,9 @@ export async function sendSms(config: SmsConfig, message: SmsMessage): Promise<S
   }
   if (config.provider === "twilio") {
     return sendTwilio(config, message);
+  }
+  if (config.provider === "safravo") {
+    return sendSafravo(config, message);
   }
   return sendCustom(config, message);
 }
@@ -118,6 +121,39 @@ async function sendCustom(config: SmsConfig, message: SmsMessage): Promise<SmsRe
       return { success: true, messageId: data.id || data.messageId };
     }
     return { success: false, error: data.error || data.message || "Custom provider error" };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function sendSafravo(config: SmsConfig, message: SmsMessage): Promise<SmsResult> {
+  if (!config.baseUrl) {
+    return { success: false, error: "Missing Safravo base URL" };
+  }
+  if (!config.apiKey) {
+    return { success: false, error: "Missing Safravo API key" };
+  }
+
+  try {
+    const res = await fetch(`${config.baseUrl}/sms/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${config.apiKey}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        to: message.to,
+        body: message.body,
+        sender_id: config.senderId || "DrumvaleSec",
+      }),
+    });
+
+    const data = (await res.json()) as any;
+    if (res.ok && (data.success || data.message_id || data.id)) {
+      return { success: true, messageId: data.message_id || data.id || "sent" };
+    }
+    return { success: false, error: data.message || data.error || `Safravo error: ${res.status}` };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
