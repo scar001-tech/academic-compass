@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd artifacts/academic-compass && pnpm run build",
+  "buildCommand": "pnpm run build",
   "outputDirectory": "artifacts/academic-compass/dist/public",
   "installCommand": "pnpm install",
   "rewrites": [
