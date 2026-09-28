@@ -379,10 +379,7 @@ export default function MarkEntry() {
       setUnmatched([]);
       setManualMap({});
 
-      const token = localStorage.getItem("ac_token");
-      if (!token) {
-        toast.info("Marks saved locally. Sign in to sync them to the cloud.");
-      } else if (stateRef.current.online) {
+      if (stateRef.current.online) {
         const result = await syncNow();
         if (result && result.pushed > 0) {
           toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);
@@ -482,10 +479,7 @@ export default function MarkEntry() {
       setUnmatched([]);
       setManualMap({});
 
-      const token = localStorage.getItem("ac_token");
-      if (!token) {
-        toast.info("Marks saved locally. Sign in to sync them to the cloud.");
-      } else if (stateRef.current.online) {
+      if (stateRef.current.online) {
         const result = await syncNow();
         if (result && result.pushed > 0) {
           toast.success(`Synced ${result.pushed} mark${result.pushed > 1 ? "s" : ""} to cloud`);

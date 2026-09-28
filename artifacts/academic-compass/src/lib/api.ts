@@ -1,5 +1,6 @@
 /**
  * REST API client.
+ * Authentication is disabled — requests are anonymous and treated as the principal.
  */
 
 const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN ?? "").replace(/\/$/, "");
@@ -21,23 +22,16 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
-  const token = localStorage.getItem("ac_token");
   try {
     const res = await fetch(`${BASE}${path}`, {
       method,
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (!res.ok) {
-      if (res.status === 401) {
-        localStorage.removeItem("ac_token");
-        localStorage.removeItem("ac_user");
-        if (window.location.pathname !== "/auth") window.location.assign("/auth");
-      }
       const err = await res.json().catch(() => ({ message: res.statusText }));
       throw new Error(err.message ?? "Request failed");
     }

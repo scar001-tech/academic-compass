@@ -260,7 +260,6 @@ export default function Marks() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("ac_token")}`,
         },
         body: JSON.stringify({
           rows,
