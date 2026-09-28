@@ -108,7 +108,8 @@ export function generateStudentReportPdf(student: any, exam: any, rows: any[], s
   y += 6;
   doc.setFont("helvetica", "bold");
   doc.text(`Mean Score: ${stats.mean != null ? stats.mean.toFixed(1) : "—"}`, 14, y);
-  doc.text(`Grade: ${stats.overallGrade || "—"}`, 90, y, { align: "center" });
+  doc.text(`Mean Grade: ${stats.overallGrade || "—"}`, 90, y, { align: "center" });
+  doc.text(`Points: ${stats.totalPoints}${stats.meanPoints ? ` (avg ${stats.meanPoints})` : ""}`, pageWidth / 2 + 30, y, { align: "center" });
   doc.text(`Stream Pos.: ${stats.streamPosition || "—"}`, pageWidth - 14, y, { align: "right" });
 
   y += 10;

@@ -147,6 +147,34 @@ Academic-Compass/
 3. During signup, users select their department to help the Principal assign roles faster
 4. Once approved, the Principal assigns roles: Teacher or Senior Teacher
 
+## Report Card Summary Boxes
+
+The A4 report card header displays five summary boxes derived from the latest exam:
+
+| Box | Value | Sub-line |
+|-----|-------|----------|
+| **Mean Grade** | Grade letter from the curriculum grading scale (e.g. `B+`, `EE2`) | Mean score %, e.g. `Mean 72.4%` |
+| **Total Marks** | Sum of all subject scores | Number of subjects with marks |
+| **Total Points** | Sum of grade points across subjects | Average points per subject |
+| **Stream Pos.** | Rank / stream total | — |
+| **Overall Pos.** | Rank / class total | — |
+
+### Mean Grade Calculation
+
+The mean grade is computed from the average raw score across all marked subjects:
+
+```
+mean = Σ(score) / N_subjects_with_marks
+overallGrade = gradeFor(mean, curriculum.gradingScale)
+```
+
+- The **grade letter** is looked up in the curriculum's grading scale (KCSE or CBC bands).
+- **Total Points** sums the grade points for each subject's individual grade.
+- **Mean Points** = total points ÷ number of subjects (the standard KCSE aggregate).
+- When no marks have been entered yet, the grade displays `—` rather than defaulting to the lowest band.
+
+This logic lives in `statsForStudentExam` (`artifacts/academic-compass/src/lib/schoolData.ts:485`) and is shared by the web report card, the SMS summary, and the generated PDF.
+
 ## Database
 
 The project uses SQLite for local development. The database file is stored at:

@@ -86,12 +86,14 @@ router.post("/send-report", authenticateJWT, requireRoles("admin", "principal", 
       const gradeBand = curriculum?.gradingScale?.find((band: any) => band.grade === row.grade);
       return total + (gradeBand?.points || 0);
     }, 0);
+    const meanPoints = reportRows.length ? Math.round((totalPoints / reportRows.length) * 100) / 100 : 0;
     const stats = {
       mean: Math.round(mean * 10) / 10,
-      overallGrade: gradeForScore(mean),
+      overallGrade: reportRows.length ? gradeForScore(mean) : "—",
       streamPosition: requestStreamPosition?.rank ? `${requestStreamPosition.rank}/${requestStreamPosition.total}` : (findPosition(streamScores) || "—"),
       overallPosition: requestOverallPosition?.rank ? `${requestOverallPosition.rank}/${requestOverallPosition.total}` : (findPosition(classScores) || "—"),
       totalPoints,
+      meanPoints,
     };
 
     const classTeacher = (schoolData.teachers || []).find((t: any) => t.id === (schoolData.classes || []).find((c: any) => c.id === student.classId)?.classTeacherId);
@@ -134,7 +136,7 @@ router.post("/send-report", authenticateJWT, requireRoles("admin", "principal", 
     const message = `Dear Parent/Guardian,
 ${exam.name} Report Card for ${student.name}:
 ${subjectBreakdown}
-Summary: Total Points Attained: ${stats.totalPoints} | Mean Grade: ${stats.overallGrade}
+Summary: Total Points Attained: ${stats.totalPoints} | Mean Grade: ${stats.overallGrade} | Mean Score: ${stats.mean}${stats.meanPoints ? ` | Avg Points: ${stats.meanPoints}` : ""}
 Drumvale Secondary`;
 
     let result: SmsResult = { success: false, error: "No SMS provider configured" };

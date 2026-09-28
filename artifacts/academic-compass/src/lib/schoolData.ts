@@ -484,7 +484,7 @@ export interface StudentSubjectStat {
 
 export function statsForStudentExam(
   state: AppState, studentId: ID, examId: ID,
-): { rows: StudentSubjectStat[]; mean: number; totalPoints: number; overallGrade: string } {
+): { rows: StudentSubjectStat[]; mean: number; totalPoints: number; meanPoints: number; overallGrade: string } {
   const student = state.students.find(s => s.id === studentId)!;
   const exam = state.exams.find(e => e.id === examId)!;
   const curriculum = state.curricula.find(c => c.id === student.curriculumId)!;
@@ -516,8 +516,9 @@ export function statsForStudentExam(
   const validRows = rows.filter(r => r.score != null);
   const mean = validRows.length ? validRows.reduce((a, r) => a + (r.score ?? 0), 0) / validRows.length : 0;
   const totalPoints = validRows.reduce((a, r) => a + (gradeFor(r.score, curriculum.gradingScale)?.points || 0), 0);
-  const overallGrade = gradeFor(mean, curriculum.gradingScale)?.grade || "—";
-  return { rows: validRows, mean: Math.round(mean * 10) / 10, totalPoints, overallGrade };
+  const meanPoints = validRows.length ? totalPoints / validRows.length : 0;
+  const overallGrade = validRows.length ? (gradeFor(mean, curriculum.gradingScale)?.grade || "—") : "—";
+  return { rows: validRows, mean: Math.round(mean * 10) / 10, totalPoints, meanPoints: Math.round(meanPoints * 100) / 100, overallGrade };
 }
 
 export interface TermSubjectStat {

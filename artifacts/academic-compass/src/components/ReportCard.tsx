@@ -4,6 +4,7 @@ import { useAuth } from "@/store/auth";
 import {
   statsForStudentExam,
   statsForStudentAllTerms,
+  gradeFor,
   type CurriculumId,
   type ID,
 } from "@/lib/schoolData";
@@ -176,9 +177,21 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
       </section>
 
       <section className="grid grid-cols-5 gap-2 py-2 border-b">
-        <SummaryBox label="Mean Grade" value={(latestStats as any).overallGrade} />
-        <SummaryBox label="Total Marks" value={filledRows.reduce((a, r) => a + (r.score ?? 0), 0).toFixed(0)} />
-        <SummaryBox label="Total Points" value={(latestStats as any).totalPoints.toFixed(0)} />
+        <SummaryBox
+          label="Mean Grade"
+          value={filledRows.length ? latestStats!.overallGrade : "—"}
+          sub={filledRows.length ? `Mean ${latestStats!.mean.toFixed(1)}%` : "No marks"}
+        />
+        <SummaryBox
+          label="Total Marks"
+          value={filledRows.reduce((a, r) => a + (r.score ?? 0), 0).toFixed(0)}
+          sub={filledRows.length ? `${filledRows.length} subjects` : ""}
+        />
+        <SummaryBox
+          label="Total Points"
+          value={latestStats!.totalPoints.toFixed(0)}
+          sub={filledRows.length ? `Avg ${latestStats!.meanPoints.toFixed(2)} pts/subject` : ""}
+        />
         <SummaryBox label="Stream Pos." value={streamPosition ? `${streamPosition.rank} / ${streamPosition.total}` : "—"} />
         <SummaryBox label="Overall Pos." value={overallPosition ? `${overallPosition.rank} / ${overallPosition.total}` : "—"} />
       </section>
@@ -319,11 +332,12 @@ function Field({ label, value, onChange, disabled }: {
   );
 }
 
-function SummaryBox({ label, value }: { label: string; value: string }) {
+function SummaryBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="border rounded-md p-1.5 text-center" style={{ backgroundColor: LIGHT_GREY }}>
       <div className="text-[10px] text-muted-foreground uppercase">{label}</div>
       <div className="text-sm font-bold" style={{ color: BLUE }}>{value}</div>
+      {sub ? <div className="text-[9px] text-muted-foreground leading-tight">{sub}</div> : null}
     </div>
   );
 }
