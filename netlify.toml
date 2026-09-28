@@ -1,0 +1,2 @@
+[build]
+  publish = "artifacts/academic-compass/dist/public"
