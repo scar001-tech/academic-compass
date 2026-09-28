@@ -61,6 +61,8 @@ Required variables:
 
 ## Development
 
+Authentication is disabled — every visitor has full principal access, so no login is required.
+
 ```bash
 # Run backend API server
 pnpm --filter @workspace/api-server run dev
@@ -114,12 +116,11 @@ Academic-Compass/
 
 ## User Roles
 
-| Role | Capabilities |
-|------|-------------|
-| **Principal** | Full system access, approve/reject signups, assign roles, manage staff and students, edit reports, timetables, and settings |
-| **Senior Teacher** | Create/edit/delete timetable, add/delete learners, comment on reports, view mark sheets |
-| **Teacher** | Enter marks, comment on report forms, view timetable, view students |
-| **Unapproved** | Pending approval page until Principal grants access |
+Authentication is disabled — every user is treated as the **Principal** with full access (staff management, mark entry, timetables, settings, and report generation).
+
+## Signup & Approval Flow
+
+Not applicable — authentication has been removed. All visitors have full access without signing up or awaiting approval.
 
 ## Pages
 
@@ -133,19 +134,14 @@ Academic-Compass/
 | `/exams` | Exam creation and management |
 | `/sheets` | Mark sheets review |
 | `/entry` | Mark entry form |
+| `/marks` | Marks & results matrix |
 | `/timetable` | Class timetable |
 | `/conflicts` | Sync conflicts resolution |
 | `/transcripts` | Student transcripts |
 | `/reports` | A4 printable report forms |
+| `/parent-contacts` | Parent contact directory |
 | `/settings` | School settings and grading scale |
-| `/profile` | User profile and role assignments |
-
-## Signup & Approval Flow
-
-1. First account created becomes **Principal** with full access
-2. All subsequent accounts require **Principal approval**
-3. During signup, users select their department to help the Principal assign roles faster
-4. Once approved, the Principal assigns roles: Teacher or Senior Teacher
+| `/profile` | User profile |
 
 ## Report Card Summary Boxes
 

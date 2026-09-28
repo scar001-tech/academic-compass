@@ -105,9 +105,9 @@ CORS_ORIGINS=https://academic-compass.vercel.app,https://your-custom-domain.com
 
 ## 5. Verify Deployment
 
-1. Visit your Vercel frontend URL
-2. Sign up with a new account (first account becomes Principal)
-3. Verify the API calls work (check browser DevTools → Network tab)
+1. Visit your Vercel frontend URL.
+2. No login is required — authentication has been disabled, so every visitor has full principal access.
+3. Verify the API calls work (check browser DevTools → Network tab).
 
 ## Troubleshooting
 
