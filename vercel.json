@@ -1,8 +1,0 @@
-{
-  "buildCommand": "pnpm run build",
-  "outputDirectory": "artifacts/academic-compass/dist/public",
-  "installCommand": "pnpm install",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
