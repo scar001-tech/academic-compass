@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { POSTGRES_SCHEMA } from "./postgresSchema";
 
 export type AppRole =
   | "admin"
@@ -552,9 +553,11 @@ async function createSqliteStore(rawPath: string): Promise<DataStore> {
   };
 }
 
+
 async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
   const { Pool } = await import("pg");
   const pool = new Pool({ connectionString: databaseUrl });
+  await pool.query(POSTGRES_SCHEMA);
 
   const profileFromRow = (row: any): ProfileRow => ({
     id: row.id,
@@ -624,27 +627,27 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
   }): Promise<"ok" | "conflict"> {
     const newVersion = (input.version ?? 0) + 1;
     const updateResult = await pool.query(
-      `UPDATE mark_entries SET score = $1, updated_by = $2, device_name = $3, version = $4, updated_at = $5
+      `UPDATE ac_mark_entries SET score = $1, updated_by = $2, device_name = $3, version = $4, updated_at = $5
        WHERE id = $6 AND version = $7`,
       [input.score, input.userId, input.deviceName ?? null, newVersion, new Date().toISOString(), input.id, input.version ?? 0]
     );
     if (updateResult.rowCount) return "ok";
 
     const insertResult = await pool.query(
-      `INSERT INTO mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
+      `INSERT INTO ac_mark_entries (id, curriculum_id, sheet_id, student_id, score, updated_by, device_name, version, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING`,
       [input.id, input.curriculumId, input.sheetId, input.studentId, input.score, input.userId, input.deviceName ?? null, 1, new Date().toISOString()]
     );
     if (insertResult.rowCount) return "ok";
 
-    const existing = await pool.query("SELECT * FROM mark_entries WHERE id = $1 LIMIT 1", [input.id]);
+    const existing = await pool.query("SELECT * FROM ac_mark_entries WHERE id = $1 LIMIT 1", [input.id]);
     const alreadyConflicted = await pool.query(
-      "SELECT id FROM sync_conflicts WHERE entity = 'mark' AND entity_id = $1 AND field = 'score' AND status = 'pending' LIMIT 1",
+      "SELECT id FROM ac_sync_conflicts WHERE entity = 'mark' AND entity_id = $1 AND field = 'score' AND status = 'pending' LIMIT 1",
       [input.id]
     );
     if (!alreadyConflicted.rows.length) {
       await pool.query(
-        `INSERT INTO sync_conflicts (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
+        `INSERT INTO ac_sync_conflicts (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
          VALUES ($1, 'mark', $2, 'score', $3, $4, $5, $6, 'pending', $7)`,
         [randomUUID(), input.id, String(existing.rows[0]?.score ?? ""), String(input.score ?? ""), input.userId, input.deviceName ?? null, new Date().toISOString()]
       );
@@ -670,7 +673,7 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
   }): Promise<"ok" | "conflict"> {
     const newVersion = (input.version ?? 0) + 1;
     const updateResult = await pool.query(
-      `UPDATE timetable_slots SET curriculum_id = $1, class_id = $2, stream_id = $3, day_of_week = $4, period = $5,
+      `UPDATE ac_timetable_slots SET curriculum_id = $1, class_id = $2, stream_id = $3, day_of_week = $4, period = $5,
        start_time = $6, end_time = $7, subject_id = $8, teacher_id = $9, room = $10, version = $11, updated_by = $12,
        device_name = $13, updated_at = $14 WHERE id = $15 AND version = $16`,
       [input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, newVersion, input.userId, input.deviceName ?? null, new Date().toISOString(), input.id, input.version ?? 0]
@@ -678,20 +681,20 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
     if (updateResult.rowCount) return "ok";
 
     const insertResult = await pool.query(
-      `INSERT INTO timetable_slots (id, curriculum_id, class_id, stream_id, day_of_week, period, start_time, end_time, subject_id, teacher_id, room, version, updated_by, device_name, updated_at)
+      `INSERT INTO ac_timetable_slots (id, curriculum_id, class_id, stream_id, day_of_week, period, start_time, end_time, subject_id, teacher_id, room, version, updated_by, device_name, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT (id) DO NOTHING`,
       [input.id, input.curriculumId, input.classId, input.streamId ?? null, input.dayOfWeek, input.period, input.startTime ?? null, input.endTime ?? null, input.subjectId ?? null, input.teacherId ?? null, input.room ?? null, 1, input.userId, input.deviceName ?? null, new Date().toISOString()]
     );
     if (insertResult.rowCount) return "ok";
 
-    const existing = await pool.query("SELECT * FROM timetable_slots WHERE id = $1 LIMIT 1", [input.id]);
+    const existing = await pool.query("SELECT * FROM ac_timetable_slots WHERE id = $1 LIMIT 1", [input.id]);
     const alreadyConflicted = await pool.query(
-      "SELECT id FROM sync_conflicts WHERE entity = 'timetable' AND entity_id = $1 AND field = 'slot' AND status = 'pending' LIMIT 1",
+      "SELECT id FROM ac_sync_conflicts WHERE entity = 'timetable' AND entity_id = $1 AND field = 'slot' AND status = 'pending' LIMIT 1",
       [input.id]
     );
     if (!alreadyConflicted.rows.length) {
       await pool.query(
-        `INSERT INTO sync_conflicts (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
+        `INSERT INTO ac_sync_conflicts (id, entity, entity_id, field, server_value, incoming_value, incoming_by, incoming_device, status, created_at)
          VALUES ($1, 'timetable', $2, 'slot', $3, $4, $5, $6, 'pending', $7)`,
         [randomUUID(), input.id, `${existing.rows[0]?.subject_id}@${existing.rows[0]?.day_of_week}/${existing.rows[0]?.period}`, `${input.subjectId}@${input.dayOfWeek}/${input.period}`, input.userId, input.deviceName ?? null, new Date().toISOString()]
       );
@@ -701,63 +704,63 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
 
   return {
     async getProfileByEmail(email) {
-      const result = await pool.query("SELECT * FROM profiles WHERE email = $1 LIMIT 1", [email]);
+      const result = await pool.query("SELECT * FROM ac_profiles WHERE email = $1 LIMIT 1", [email]);
       return result.rows[0] ? profileFromRow(result.rows[0]) : null;
     },
     async getProfileById(id) {
-      const result = await pool.query("SELECT * FROM profiles WHERE id = $1 LIMIT 1", [id]);
+      const result = await pool.query("SELECT * FROM ac_profiles WHERE id = $1 LIMIT 1", [id]);
       return result.rows[0] ? profileFromRow(result.rows[0]) : null;
     },
     async hasAnyProfile() {
-      const result = await pool.query("SELECT id FROM profiles LIMIT 1");
+      const result = await pool.query("SELECT id FROM ac_profiles LIMIT 1");
       return result.rows.length > 0;
     },
     async createProfile(input) {
       await pool.query(
-        `INSERT INTO profiles (id, email, password_hash, full_name, department, approved, created_at)
+        `INSERT INTO ac_profiles (id, email, password_hash, full_name, department, approved, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [input.id, input.email, input.passwordHash, input.fullName ?? null, input.department ?? null, input.approved, new Date().toISOString()]
       );
       for (const role of input.roles ?? []) {
-        await pool.query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING", [input.id, role]);
+        await pool.query("INSERT INTO ac_user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING", [input.id, role]);
       }
     },
     async rolesForUser(userId) {
-      const result = await pool.query("SELECT role FROM user_roles WHERE user_id = $1", [userId]);
+      const result = await pool.query("SELECT role FROM ac_user_roles WHERE user_id = $1", [userId]);
       return result.rows.map((row) => row.role);
     },
     async hasAnyRole(userId, roles) {
-      const result = await pool.query("SELECT role FROM user_roles WHERE user_id = $1", [userId]);
+      const result = await pool.query("SELECT role FROM ac_user_roles WHERE user_id = $1", [userId]);
       const assigned = result.rows.map((row) => row.role);
       return assigned.some((role) => roles.includes(role));
     },
     async listProfiles() {
-      const profilesResult = await pool.query("SELECT * FROM profiles ORDER BY created_at ASC");
-      const rolesResult = await pool.query("SELECT user_id, role FROM user_roles");
+      const profilesResult = await pool.query("SELECT * FROM ac_profiles ORDER BY created_at ASC");
+      const rolesResult = await pool.query("SELECT user_id, role FROM ac_user_roles");
       return profilesResult.rows.map((row) => ({
         ...profileFromRow(row),
         roles: rolesResult.rows.filter((r) => r.user_id === row.id).map((r) => r.role),
       }));
     },
     async setApproval(userId, approved) {
-      await pool.query("UPDATE profiles SET approved = $1 WHERE id = $2", [approved, userId]);
+      await pool.query("UPDATE ac_profiles SET approved = $1 WHERE id = $2", [approved, userId]);
     },
     async assignRole(userId, role, action) {
       if (action === "add") {
-        await pool.query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, role]);
+        await pool.query("INSERT INTO ac_user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, role]);
       } else {
-        await pool.query("DELETE FROM user_roles WHERE user_id = $1 AND role = $2", [userId, role]);
+        await pool.query("DELETE FROM ac_user_roles WHERE user_id = $1 AND role = $2", [userId, role]);
       }
     },
     async deleteProfile(userId) {
-      await pool.query("DELETE FROM user_roles WHERE user_id = $1", [userId]);
-      await pool.query("DELETE FROM profiles WHERE id = $1", [userId]);
+      await pool.query("DELETE FROM ac_user_roles WHERE user_id = $1", [userId]);
+      await pool.query("DELETE FROM ac_profiles WHERE id = $1", [userId]);
     },
     async updatePassword(userId, passwordHash) {
-      await pool.query("UPDATE profiles SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
+      await pool.query("UPDATE ac_profiles SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
     },
     async listMarkEntries() {
-      const result = await pool.query("SELECT * FROM mark_entries");
+      const result = await pool.query("SELECT * FROM ac_mark_entries");
       return result.rows.map(markFromRow);
     },
     upsertMarkEntry,
@@ -773,7 +776,7 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
       return results;
     },
     async listTimetableSlots() {
-      const result = await pool.query("SELECT * FROM timetable_slots");
+      const result = await pool.query("SELECT * FROM ac_timetable_slots");
       return result.rows.map(slotFromRow);
     },
     upsertTimetableSlot,
@@ -789,28 +792,28 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
       return results;
     },
     async deleteTimetableSlot(id) {
-      await pool.query("DELETE FROM timetable_slots WHERE id = $1", [id]);
+      await pool.query("DELETE FROM ac_timetable_slots WHERE id = $1", [id]);
     },
     async listConflicts(status) {
       const result = status
-        ? await pool.query("SELECT * FROM sync_conflicts WHERE status = $1", [status])
-        : await pool.query("SELECT * FROM sync_conflicts");
+        ? await pool.query("SELECT * FROM ac_sync_conflicts WHERE status = $1", [status])
+        : await pool.query("SELECT * FROM ac_sync_conflicts");
       return result.rows.map(conflictFromRow);
     },
     async resolveConflict(id, resolution, customValue) {
       await pool.query(
-        "UPDATE sync_conflicts SET status = 'resolved', resolution = $1, custom_value = $2, resolved_at = $3 WHERE id = $4",
+        "UPDATE ac_sync_conflicts SET status = 'resolved', resolution = $1, custom_value = $2, resolved_at = $3 WHERE id = $4",
         [resolution, customValue ?? null, new Date().toISOString(), id]
       );
     },
     async getSchoolSnapshot() {
-      const result = await pool.query("SELECT * FROM school_data WHERE id = 'global' LIMIT 1");
+      const result = await pool.query("SELECT * FROM ac_school_data WHERE id = 'global' LIMIT 1");
       const row = result.rows[0];
       return row ? { id: row.id, data: row.data, updatedAt: row.updated_at } : null;
     },
     async setSchoolSnapshot(data) {
       await pool.query(
-        `INSERT INTO school_data (id, data, updated_at) VALUES ('global', $1, $2)
+        `INSERT INTO ac_school_data (id, data, updated_at) VALUES ('global', $1, $2)
          ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = $2`,
         [data, new Date().toISOString()]
       );
@@ -821,7 +824,7 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
       if (filters?.studentId) { conditions.push("student_id = $" + (args.length + 1)); args.push(filters.studentId); }
       if (filters?.examId) { conditions.push("exam_id = $" + (args.length + 1)); args.push(filters.examId); }
       if (filters?.status) { conditions.push("status = $" + (args.length + 1)); args.push(filters.status); }
-      const sql = "SELECT * FROM sms_logs" + (conditions.length ? " WHERE " + conditions.join(" AND ") : "") + " ORDER BY sent_at DESC";
+      const sql = "SELECT * FROM ac_sms_logs" + (conditions.length ? " WHERE " + conditions.join(" AND ") : "") + " ORDER BY sent_at DESC";
       const result = await pool.query(sql, args);
       return result.rows.map((row) => ({
         id: row.id,
@@ -840,7 +843,7 @@ async function createPostgresStore(databaseUrl: string): Promise<DataStore> {
     },
     async createSmsLog(input) {
       await pool.query(
-        `INSERT INTO sms_logs (id, student_id, admission_no, student_name, parent_number, exam_id, exam_name, provider, status, message_id, error, sent_at)
+        `INSERT INTO ac_sms_logs (id, student_id, admission_no, student_name, parent_number, exam_id, exam_name, provider, status, message_id, error, sent_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [randomUUID(), input.studentId, input.admissionNo, input.studentName, input.parentNumber, input.examId, input.examName, input.provider, input.status, input.messageId ?? null, input.error ?? null, new Date().toISOString()]
       );
