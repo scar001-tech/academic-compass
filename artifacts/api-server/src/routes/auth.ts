@@ -146,6 +146,15 @@ router.post("/signup", async (req, res) => {
     const existing = await store.getProfileByEmail(email);
     if (existing) return res.status(409).json({ message: "Email already registered" });
 
+    // Only the very first account bootstraps as admin+principal. Every later
+    // self-signup starts as an unapproved teacher and must be granted access
+    // by a principal. DEV_BYPASS_APPROVAL exists for local development only.
+    const isFirst = !(await store.hasAnyProfile());
+    let approved = isFirst;
+    if (!approved && process.env.DEV_BYPASS_APPROVAL === "true") {
+      approved = true;
+    }
+
     const supabaseAvailable = await isSupabaseAvailable();
     let id: string;
 
@@ -171,14 +180,14 @@ router.post("/signup", async (req, res) => {
         passwordHash,
         fullName: full_name || null,
         department: department || null,
-        approved: true,
-        roles: ["admin", "principal"],
+        approved,
+        roles: isFirst ? ["admin", "principal"] : ["teacher"],
       });
 
       const token = makeToken(id);
       return res.status(201).json({
         token,
-        user: { id, email, full_name: full_name || null, department: department || null, approved: true },
+        user: { id, email, full_name: full_name || null, department: department || null, approved },
       });
     }
 
@@ -188,14 +197,14 @@ router.post("/signup", async (req, res) => {
       passwordHash: "supabase-managed",
       fullName: full_name || null,
       department: department || null,
-      approved: true,
-      roles: ["admin", "principal"],
+      approved,
+      roles: isFirst ? ["admin", "principal"] : ["teacher"],
     });
 
     const token = makeToken(id);
     return res.status(201).json({
       token,
-      user: { id, email, full_name: full_name || null, department: department || null, approved: true },
+      user: { id, email, full_name: full_name || null, department: department || null, approved },
     });
   } catch (err) {
     console.error("[signup]", err);
@@ -232,7 +241,7 @@ router.post("/signin", async (req, res) => {
           fullName: data.user.user_metadata?.full_name || null,
           department: data.user.user_metadata?.department || null,
           approved: true,
-          roles: ["admin", "principal"],
+          roles: [],
         });
         profile = await store.getProfileById(data.user.id);
         if (!profile) return res.status(500).json({ message: "Internal server error" });
@@ -244,8 +253,9 @@ router.post("/signin", async (req, res) => {
       }
 
       const currentRoles = await store.rolesForUser(profile.id);
-      if (!currentRoles.includes("admin")) await store.assignRole(profile.id, "admin", "add");
-      if (!currentRoles.includes("principal")) await store.assignRole(profile.id, "principal", "add");
+      if (currentRoles.length === 0) {
+        await store.assignRole(profile.id, "teacher", "add");
+      }
 
       const token = makeToken(profile.id);
       return res.json({
@@ -270,8 +280,6 @@ router.post("/signin", async (req, res) => {
       if (currentRoles.length === 0) {
         await store.assignRole(profile.id, "teacher", "add");
       }
-      if (!currentRoles.includes("admin")) await store.assignRole(profile.id, "admin", "add");
-      if (!currentRoles.includes("principal")) await store.assignRole(profile.id, "principal", "add");
 
       const token = makeToken(profile.id);
       return res.json({
@@ -534,6 +542,10 @@ router.post("/supabase-callback", async (req, res) => {
     let profile = await store.getProfileById(supabaseUid);
 
     if (!profile) {
+      // Only the very first account bootstraps as admin+principal; every other
+      // new Supabase user starts as a teacher. Existing profiles are never
+      // escalated here.
+      const isFirst = !(await store.hasAnyProfile());
       await store.createProfile({
         id: supabaseUid,
         email,
@@ -541,14 +553,10 @@ router.post("/supabase-callback", async (req, res) => {
         fullName: full_name || null,
         department: department || null,
         approved: true,
-        roles: ["admin", "principal"],
+        roles: isFirst ? ["admin", "principal"] : ["teacher"],
       });
       profile = await store.getProfileById(supabaseUid);
       if (!profile) return res.status(500).json({ message: "Internal server error" });
-    } else {
-      const currentRoles = await store.rolesForUser(profile.id);
-      if (!currentRoles.includes("admin")) await store.assignRole(profile.id, "admin", "add");
-      if (!currentRoles.includes("principal")) await store.assignRole(profile.id, "principal", "add");
     }
 
     const tempPassword = generateTempPassword();
