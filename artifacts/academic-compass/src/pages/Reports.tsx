@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { statsForStudentExam, statsForStudentAllTerms, sortStudentsByAdmissionNo, type CurriculumId, type ID } from "@/lib/schoolData";
+import { statsForStudentExam, statsForStudentAllTerms, examHasAnyMarks, sortStudentsByAdmissionNo, type CurriculumId, type ID } from "@/lib/schoolData";
 import { Printer, ChevronLeft, ChevronRight, Search, Download, MessageSquare, PrinterCheck } from "lucide-react";
 import { toast } from "sonner";
 import ReportCard from "@/components/ReportCard";
@@ -29,6 +29,7 @@ export default function Reports() {
   const curricula = state.curricula;
 
   const exams   = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")
+    .filter(e => examHasAnyMarks(state, e.id))
     .sort((a, b) => a.year - b.year || a.term - b.term);
   const classes = state.classes.filter(c => c.curriculumId === activeCurriculum);
 
@@ -96,8 +97,9 @@ export default function Reports() {
     const termNum = selectedTerm === "all" ? undefined : Number(selectedTerm);
     return [...state.exams]
       .filter(e => e.curriculumId === activeCurriculum && e.status !== "draft" && (termNum === undefined || e.term === termNum))
+      .filter(e => examHasAnyMarks(state, e.id))
       .at(-1) ?? null;
-  }, [state.exams, activeCurriculum, selectedTerm]);
+  }, [state.exams, state.sheets, state.entries, activeCurriculum, selectedTerm]);
 
   const latestMeans = useMemo(() => {
     if (!latestExam) return new Map<ID, number>();

@@ -111,22 +111,29 @@ export async function hasAnyRole(userId: string, roles: readonly string[]) {
   return (await getStore()).hasAnyRole(userId, roles);
 }
 
-export function requireRoles(..._roles: string[]): RequestHandler {
-  return async (_req: any, _res, next) => {
+export function requireRoles(...roles: string[]): RequestHandler {
+  return async (req: any, res, next) => {
     try {
+      const allowed = await hasAnyRole(req.userId, roles);
+      if (!allowed) return res.status(403).json({ message: "Forbidden" });
       return next();
     } catch (err) {
       console.error("[requireRoles]", err);
-      return _res.status(500).json({ message: "Internal server error" });
+      return res.status(500).json({ message: "Internal server error" });
     }
   };
 }
 
-export function authenticateJWT(req: any, _res: any, next: any) {
-  // Authentication disabled — every request is treated as the principal.
-  req.userId = "anonymous-principal";
-  req.roles = ["admin", "principal"];
-  return next();
+export function authenticateJWT(req: any, res: any, next: any) {
+  const auth = req.headers.authorization as string | undefined;
+  if (!auth?.startsWith("Bearer ")) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const payload = jwt.verify(auth.slice(7), JWT_SECRET) as { sub: string };
+    req.userId = payload.sub;
+    next();
+  } catch {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
 }
 
 router.post("/signup", async (req, res) => {
@@ -278,14 +285,24 @@ router.post("/signin", async (req, res) => {
   }
 });
 
-router.get("/me", authenticateJWT, async (_req: any, res) => {
-  // Auth disabled — report a principal-level session.
-  return res.json({ department: null, approved: true, full_name: "Principal" });
+router.get("/me", authenticateJWT, async (req: any, res) => {
+  try {
+    const profile = await (await getStore()).getProfileById(req.userId);
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+    return res.json({ department: profile.department, approved: profile.approved, full_name: profile.fullName });
+  } catch (err) {
+    console.error("[me]", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 });
 
-router.get("/roles", authenticateJWT, async (_req: any, res) => {
-  // Auth disabled — every user has full access.
-  return res.json(["admin", "principal"]);
+router.get("/roles", authenticateJWT, async (req: any, res) => {
+  try {
+    return res.json(await rolesForUser(req.userId));
+  } catch (err) {
+    console.error("[roles]", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 router.get("/profiles", authenticateJWT, requireRoles("admin", "principal"), async (_req: any, res) => {

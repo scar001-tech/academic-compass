@@ -482,6 +482,14 @@ export interface StudentSubjectStat {
   entryId: ID;
 }
 
+export function examHasAnyMarks(state: AppState, examId: ID): boolean {
+  const sheetIds = new Set(
+    state.sheets.filter(sh => sh.examId === examId).map(sh => sh.id)
+  );
+  if (sheetIds.size === 0) return false;
+  return state.entries.some(e => sheetIds.has(e.sheetId) && e.score != null);
+}
+
 export function statsForStudentExam(
   state: AppState, studentId: ID, examId: ID,
 ): { rows: StudentSubjectStat[]; mean: number; totalPoints: number; meanPoints: number; overallGrade: string } {
@@ -544,6 +552,7 @@ export function statsForStudentAllTerms(
   const exams = state.exams
     .filter(e => e.curriculumId === student.curriculumId && e.status !== "draft")
     .filter(e => selectedTerm === undefined || e.term === selectedTerm)
+    .filter(e => examHasAnyMarks(state, e.id))
     .sort((a, b) => a.year - b.year || a.term - b.term);
   const subjects = state.subjects.filter(s => s.curriculumId === student.curriculumId);
   const termList = exams.map(e => ({ examId: e.id, term: e.term, year: e.year, name: e.name }));

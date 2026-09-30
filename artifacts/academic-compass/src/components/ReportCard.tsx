@@ -4,7 +4,7 @@ import { useAuth } from "@/store/auth";
 import {
   statsForStudentExam,
   statsForStudentAllTerms,
-  gradeFor,
+  examHasAnyMarks,
   type CurriculumId,
   type ID,
 } from "@/lib/schoolData";
@@ -32,15 +32,20 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
   const str = student ? state.streams.find(s => s.id === student.streamId) : null;
   const classTeacher = cls ? state.teachers.find(t => t.id === cls.classTeacherId) : null;
 
-  const exams = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")
+  const allExams = state.exams.filter(e => e.curriculumId === activeCurriculum && e.status !== "draft")
     .filter(e => selectedTerm === undefined || e.term === selectedTerm)
     .sort((a, b) => a.year - b.year || a.term - b.term);
+
+  const exams = useMemo(
+    () => allExams.filter(e => examHasAnyMarks(state, e.id)),
+    [allExams, state.sheets, state.entries]
+  );
 
   const latestExam = useMemo(() => exams[exams.length - 1] ?? null, [exams]);
 
   const examLabel = (exam: ID | undefined, index: number) => {
     if (!exam) return "";
-    const pos = exams.findIndex(e => e.id === exam);
+    const pos = allExams.findIndex(e => e.id === exam);
     if (activeCurriculum === "844") {
       if (pos === 0) return "Assessment 1";
       if (pos === 1) return "Assessment 2";
@@ -160,7 +165,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
             </div>
               <div className="text-right">
                 <div className="text-sm font-semibold uppercase tracking-wide text-white/90">Academic Report Form</div>
-                <div className="text-lg font-bold">{cls?.name || "FORM"} — {latestExam ? examLabel(latestExam.id, exams.findIndex(e => e.id === latestExam.id)) : ""}</div>
+                <div className="text-lg font-bold">{cls?.name || "FORM"} — {latestExam ? examLabel(latestExam.id, allExams.findIndex(e => e.id === latestExam.id)) : ""}</div>
                 <div className="text-base">({latestExam?.year} — TERM {latestExam?.term})</div>
               </div>
           </div>
@@ -222,7 +227,7 @@ export default function ReportCard({ studentId, activeCurriculum, printMode = fa
                 <th className="text-left p-1.5 border border-black/30">SUBJECTS</th>
                 {multiTermStats?.terms.map((t) => (
                   <th key={t.examId} className="text-center p-1.5 border border-black/30" colSpan={4}>
-                    {examLabel(t.examId, exams.findIndex(e => e.id === t.examId))}
+                    {examLabel(t.examId, allExams.findIndex(e => e.id === t.examId))}
                   </th>
                 ))}
                 <th className="text-left p-1.5 border border-black/30">COMMENT</th>

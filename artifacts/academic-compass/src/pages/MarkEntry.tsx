@@ -41,10 +41,12 @@ export default function MarkEntry() {
 
   const preSheet = params.get("sheet");
   const preSheetObj = state.sheets.find(s => s.id === preSheet);
+  const preSheetExam = preSheetObj ? state.exams.find(e => e.id === preSheetObj.examId) : undefined;
 
   const [classId, setClassId]     = useState<string>(preSheetObj?.classId || "");
   const [streamId, setStreamId]   = useState<string>(preSheetObj?.streamId || "");
   const [subjectId, setSubjectId] = useState<string>(preSheetObj?.subjectId || "");
+  const [termKey, setTermKey]     = useState<string>(preSheetExam?.term ? String(preSheetExam.term) : "");
   const [examId, setExamId]       = useState<string>(preSheetObj?.examId || "");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
@@ -62,7 +64,26 @@ export default function MarkEntry() {
   const classes  = state.classes.filter(c => c.curriculumId === activeCurriculum);
   const streams  = state.streams.filter(s => s.classId === classId);
   const subjects = state.subjects.filter(s => s.curriculumId === activeCurriculum);
-  const exams    = state.exams.filter(e => e.curriculumId === activeCurriculum);
+  const allExams  = state.exams.filter(e => e.curriculumId === activeCurriculum);
+
+  const terms = useMemo(() => {
+    const years = new Set(allExams.map(e => e.year));
+    const latestYear = Math.max(...years, state.settings.academicYear || new Date().getFullYear());
+    return [1, 2, 3].map(t => {
+      const termExams = allExams
+        .filter(e => e.term === t)
+        .sort((a, b) => a.year - b.year || a.name.localeCompare(b.name));
+      return { term: t, year: latestYear, exams: termExams };
+    }).filter(g => g.exams.length > 0);
+  }, [allExams, state.settings.academicYear]);
+
+  const activeTerm = termKey ? Number(termKey) : null;
+
+  const exams = useMemo(
+    () => activeTerm ? allExams.filter(e => e.term === activeTerm) : allExams,
+    [allExams, activeTerm]
+  );
+
   const curriculum = state.curricula.find(c => c.id === activeCurriculum)!;
 
   const targetClasses = useMemo(() => {
@@ -718,7 +739,7 @@ export default function MarkEntry() {
       <Card className="p-3 md:p-4 mb-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
-            <Select value={activeCurriculum} onValueChange={(v) => { setActiveCurriculum(v as CurriculumId); setClassId(""); setStreamId(""); setSubjectId(""); setExamId(""); }}>
+            <Select value={activeCurriculum} onValueChange={(v) => { setActiveCurriculum(v as CurriculumId); setClassId(""); setStreamId(""); setSubjectId(""); setTermKey(""); setExamId(""); }}>
               <SelectTrigger><SelectValue placeholder="Curriculum"/></SelectTrigger>
               <SelectContent>{state.curricula.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
             </Select>
@@ -735,11 +756,24 @@ export default function MarkEntry() {
               <SelectContent>{subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1">
-             <Select value={examId} onValueChange={setExamId}>
-              <SelectTrigger><SelectValue placeholder="Exam"/></SelectTrigger>
-              <SelectContent>{exams.map(e => <SelectItem key={e.id} value={e.id}>{e.name} · T{e.term}</SelectItem>)}</SelectContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 flex-1">
+             <Select
+               value={termKey}
+               onValueChange={(v) => { setTermKey(v); setExamId(""); }}
+             >
+               <SelectTrigger><SelectValue placeholder="Term"/></SelectTrigger>
+               <SelectContent>
+                {terms.map(g => (
+                  <SelectItem key={`${g.year}_${g.term}`} value={String(g.term)}>
+                    Term {g.term} · {g.exams.length} exam{g.exams.length > 1 ? "s" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
+             <Select value={examId} onValueChange={setExamId}>
+               <SelectTrigger><SelectValue placeholder="Exam"/></SelectTrigger>
+               <SelectContent>{exams.map(e => <SelectItem key={e.id} value={e.id}>{e.name} · T{e.term}</SelectItem>)}</SelectContent>
+             </Select>
             <div className="flex gap-2">
               <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileImport} />
               <Button variant="outline" size="sm" disabled={!subjectId || !examId} onClick={() => fileInputRef.current?.click()}>

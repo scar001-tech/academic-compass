@@ -14,7 +14,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 const NAV = [
   { to: "/",           label: "Dashboard",       icon: LayoutDashboard, end: true },
@@ -89,7 +88,7 @@ const MORE_LINKS = [
 
 export default function AppShell() {
   const { state, activeCurriculum, setActiveCurriculum, syncNow } = useSchool();
-  const { user, signOut, isPrincipal, isSeniorTeacher, isTeacher, canManageStaff } = useAuth();
+  const { user, isPrincipal, isSeniorTeacher, isTeacher, canManageStaff } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const pending   = state.entries.filter(e => e.pending).length;
@@ -333,10 +332,7 @@ export default function AppShell() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => {
-                      signOut();
-                      toast.success("Signed out successfully.");
-                    }}
+                    onClick={() => navigate("/signout")}
                     className="h-9 w-9 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   >
                     <LogOut className="h-4 w-4" />

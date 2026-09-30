@@ -65,7 +65,7 @@ export default function Dashboard() {
   }, [subjects, sheets, latestExam, entriesBySheet]);
 
   const trendData = useMemo(() => {
-    return exams
+    const scored = exams
       .filter(e => e.status !== "draft")
       .sort((a, b) => a.year - b.year || a.term - b.term)
       .map(ex => {
@@ -77,8 +77,15 @@ export default function Dashboard() {
         }
         const avg = count ? total / count : 0;
         return { name: `${ex.name} T${ex.term}`, avg: Math.round(avg * 10) / 10 };
-      });
+      })
+      .filter(p => p.avg > 0);
+
+    return scored.slice(-2);
   }, [exams, sheets, entriesBySheet]);
+
+  const trendDelta = trendData.length === 2
+    ? Math.round((trendData[1].avg - trendData[0].avg) * 10) / 10
+    : null;
 
   const weakAreas = subjectAvgData.filter(s => s.avg > 0 && s.avg < 50).length;
 
@@ -141,8 +148,23 @@ export default function Dashboard() {
         </Card>
 
         <Card className="p-3 md:p-4">
-          <div className="text-sm font-medium mb-1">Trend across exams</div>
-          <div className="text-xs text-muted-foreground mb-2 md:mb-3">Overall mean score</div>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <div>
+              <div className="text-sm font-medium">Trend across exams</div>
+              <div className="text-xs text-muted-foreground">
+                {trendData.length === 0
+                  ? "No exam data"
+                  : trendData.length === 1
+                    ? `${trendData[0].name} only`
+                    : `${trendData[0].name} vs ${trendData[1].name}`}
+              </div>
+            </div>
+            {trendDelta !== null && (
+              <Badge variant={trendDelta >= 0 ? "secondary" : "destructive"} className="shrink-0">
+                {trendDelta >= 0 ? "+" : ""}{trendDelta}
+              </Badge>
+            )}
+          </div>
           <div className="h-56 md:h-72">
             <ResponsiveContainer>
               <LineChart data={trendData}>

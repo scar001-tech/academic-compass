@@ -7,6 +7,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SchoolProvider } from "@/store/school";
 import { AuthProvider } from "@/store/auth";
 import AppShell from "@/components/AppShell";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
+import SignOut from "./pages/SignOut";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Classes from "./pages/Classes";
@@ -27,7 +31,6 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// Authentication is disabled — every visitor has full principal access.
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -38,23 +41,28 @@ const App = () => (
             <Sonner />
             {import.meta.env.PROD && <Analytics />}
             <Routes>
-              <Route element={<AppShell />}>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/students" element={<Students />} />
-                <Route path="/classes" element={<Classes />} />
-                <Route path="/subjects" element={<Subjects />} />
-                <Route path="/teachers" element={<Teachers />} />
-                <Route path="/exams" element={<Exams />} />
-                <Route path="/sheets" element={<MarkSheets />} />
-                <Route path="/entry" element={<MarkEntry />} />
-                <Route path="/marks" element={<Marks />} />
-                <Route path="/timetable" element={<Timetable />} />
-                <Route path="/conflicts" element={<Conflicts />} />
-                <Route path="/transcripts" element={<Transcripts />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/parent-contacts" element={<ParentContacts />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/profile" element={<Profile />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route element={<ProtectedRoute />}>
+                <Route path="/signout" element={<SignOut />} />
+                <Route element={<AppShell />}>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/students" element={<Students />} />
+                  <Route path="/classes" element={<Classes />} />
+                  <Route path="/subjects" element={<Subjects />} />
+                  <Route path="/teachers" element={<Teachers />} />
+                  <Route path="/exams" element={<Exams />} />
+                  <Route path="/sheets" element={<MarkSheets />} />
+                  <Route path="/entry" element={<MarkEntry />} />
+                  <Route path="/marks" element={<Marks />} />
+                  <Route path="/timetable" element={<Timetable />} />
+                  <Route path="/conflicts" element={<Conflicts />} />
+                  <Route path="/transcripts" element={<Transcripts />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/parent-contacts" element={<ParentContacts />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/profile" element={<Profile />} />
+                </Route>
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
