@@ -82,12 +82,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRoles([]);
   };
 
+  // Auto-login on first load if no session exists
   useEffect(() => {
-    if (!session) { setLoading(false); return; }
+    if (session) {
+      // Session already exists, just load roles
+      api.get<AppRole[]>("/auth/roles")
+        .then(setRoles)
+        .catch(() => setRoles([]))
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    // Try auto-login for demo access
+    api.post<{ token: string; user: AuthUser }>("/auth/auto-login", {})
+      .then(({ token, user }) => {
+        storeSession(token, user);
+        setRoles([]); // Will fetch on next effect
+        setLoading(false);
+      })
+      .catch(() => {
+        // Auto-login failed, user needs to authenticate manually
+        setLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
     api.get<AppRole[]>("/auth/roles")
       .then(setRoles)
-      .catch(() => setRoles([]))
-      .finally(() => setLoading(false));
+      .catch(() => setRoles([]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token]);
 
