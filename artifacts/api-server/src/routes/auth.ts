@@ -136,6 +136,79 @@ export function authenticateJWT(req: any, res: any, next: any) {
   }
 }
 
+// Public endpoint for auto-login (first user or public demo access)
+router.post("/auto-login", async (req, res) => {
+  try {
+    const store = await getStore();
+    const hasAny = await store.hasAnyProfile();
+
+    if (!hasAny) {
+      // First user: create an admin account
+      const id = randomUUID();
+      const email = "admin@academic-compass.local";
+      const password = "DemoPassword123!";
+      const passwordHash = await bcrypt.hash(password, 12);
+      await store.createProfile({
+        id,
+        email,
+        passwordHash,
+        fullName: "Demo Admin",
+        department: null,
+        approved: true,
+        roles: ["admin", "principal"],
+      });
+      const token = makeToken(id);
+      return res.status(201).json({
+        token,
+        user: {
+          id,
+          email,
+          full_name: "Demo Admin",
+          department: null,
+          approved: true,
+        },
+        message: "First user auto-created",
+      });
+    }
+
+    // Try to get or create a demo principal account
+    let profile = await store.getProfileByEmail("principal@academic-compass.local");
+    if (!profile) {
+      const id = randomUUID();
+      const passwordHash = await bcrypt.hash("DemoPassword123!", 12);
+      await store.createProfile({
+        id,
+        email: "principal@academic-compass.local",
+        passwordHash,
+        fullName: "Demo Principal",
+        department: null,
+        approved: true,
+        roles: ["principal"],
+      });
+      profile = await store.getProfileById(id);
+    }
+
+    if (!profile) {
+      return res.status(500).json({ message: "Failed to create auto-login session" });
+    }
+
+    const token = makeToken(profile.id);
+    return res.json({
+      token,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.fullName,
+        department: profile.department,
+        approved: profile.approved,
+      },
+    });
+  } catch (err) {
+    console.error("[auto-login]", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.post("/signup", async (req, res) => {
   try {
     const parsed = signupSchema.safeParse(req.body);
